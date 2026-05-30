@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Học Vui - Khoa học Lớp 4",
+  "description": "Website học liệu số tương tác khoa học lớp 4 dành cho Giáo viên, Học sinh và Phụ huynh",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
