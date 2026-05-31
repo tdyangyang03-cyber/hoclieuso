@@ -533,19 +533,67 @@ export default function App() {
                 }
               })();
 
+              const deletedLessons = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_lessons") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              const deletedStudents = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_students") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              const deletedPlans = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_plans") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              const deletedEvents = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_events") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              const deletedSheets = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_sheets") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              const deletedDiscussions = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_discussions") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
               // Safely merge arrays to ensure nothing from local is lost
               merged = {
                 ...data,
-                lessons: mergeById(parsedLocal.lessons, data.lessons),
-                students: mergeById(parsedLocal.students, data.students),
+                lessons: mergeById(parsedLocal.lessons, data.lessons).filter(item => item && !deletedLessons.includes(item.id)),
+                students: mergeById(parsedLocal.students, data.students).filter(item => item && !deletedStudents.includes(item.id)),
                 workbookSubmissions: mergeById(parsedLocal.workbookSubmissions, data.workbookSubmissions),
                 mindmapSubmissions: mergeById(parsedLocal.mindmapSubmissions, data.mindmapSubmissions),
                 parentFeedback: mergeById(parsedLocal.parentFeedback, data.parentFeedback).filter(fb => fb && !deletedFeedbacks.includes(fb.id)),
-                discussionThreads: mergeById(parsedLocal.discussionThreads, data.discussionThreads),
+                discussionThreads: mergeById(parsedLocal.discussionThreads, data.discussionThreads).filter(item => item && !deletedDiscussions.includes(item.id)),
                 teacherNotes: mergeById(parsedLocal.teacherNotes, data.teacherNotes),
-                lessonPlans: mergeById(parsedLocal.lessonPlans, data.lessonPlans),
-                scheduleEvents: mergeById(parsedLocal.scheduleEvents, data.scheduleEvents),
-                studySheets: mergeById(parsedLocal.studySheets, data.studySheets),
+                lessonPlans: mergeById(parsedLocal.lessonPlans, data.lessonPlans).filter(item => item && !deletedPlans.includes(item.id)),
+                scheduleEvents: mergeById(parsedLocal.scheduleEvents, data.scheduleEvents).filter(item => item && !deletedEvents.includes(item.id)),
+                studySheets: mergeById(parsedLocal.studySheets, data.studySheets).filter(item => item && !deletedSheets.includes(item.id)),
                 gradesAndComments: mergeById(parsedLocal.gradesAndComments, data.gradesAndComments),
                 attendanceDays: Array.from(new Set([...(parsedLocal.attendanceDays || []), ...(data.attendanceDays || [])])),
                 teacherProfile: { ...parsedLocal.teacherProfile, ...data.teacherProfile }
@@ -974,14 +1022,29 @@ export default function App() {
   const handleDeleteStudent = async (id: string) => {
     requestConfirmation("Bé học sinh này sẽ bị xóa khỏi sổ lớp. Bạn có chắc chắn?", async () => {
       playClickSound();
+
+      // Track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_students") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_students", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Offline updates / Instant update
+      updateOfflineState(prev => ({
+        ...prev,
+        students: (prev.students || []).filter(s => s.id !== id),
+        gradesAndComments: (prev.gradesAndComments || []).filter(g => g.studentId !== id)
+      }));
+
       if (isOfflineMode) {
-        updateOfflineState(prev => ({
-          ...prev,
-          students: prev.students.filter(s => s.id !== id),
-          gradesAndComments: prev.gradesAndComments.filter(g => g.studentId !== id)
-        }));
         return;
       }
+
       try {
         const res = await fetch(`/api/students/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -990,11 +1053,6 @@ export default function App() {
         }
       } catch (err) {
         console.error(err);
-        updateOfflineState(prev => ({
-          ...prev,
-          students: prev.students.filter(s => s.id !== id),
-          gradesAndComments: prev.gradesAndComments.filter(g => g.studentId !== id)
-        }));
         setIsOfflineMode(true);
       }
     });
@@ -1612,6 +1670,26 @@ export default function App() {
   const handleDeleteLesson = async (id: string) => {
     requestConfirmation("Có chắc chắn muốn xóa học liệu này không?", async () => {
       playClickSound();
+
+      // Instantly track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_lessons") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_lessons", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Update state instantly so the UI reacts with zero latency
+      setAppState(prev => {
+        const filtered = (prev.lessons || []).filter(l => l.id !== id);
+        const updated = { ...prev, lessons: filtered };
+        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+        return updated;
+      });
+
       try {
         const res = await fetch(`/api/lessons/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -1825,6 +1903,26 @@ export default function App() {
   const handleDeletePlan = async (id: string) => {
     requestConfirmation("Bạn có chắc muốn xóa kế hoạch/giáo án này?", async () => {
       playClickSound();
+
+      // Track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_plans") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_plans", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Update state instantly
+      setAppState(prev => {
+        const filtered = (prev.lessonPlans || []).filter(p => p.id !== id);
+        const updated = { ...prev, lessonPlans: filtered };
+        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+        return updated;
+      });
+
       try {
         const res = await fetch(`/api/teacher/plans/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -1840,6 +1938,26 @@ export default function App() {
   const handleDeleteEvent = async (id: string) => {
     requestConfirmation("Bạn có chắc muốn xóa sự kiện lịch trình này?", async () => {
       playClickSound();
+
+      // Track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_events") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_events", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Update state instantly
+      setAppState(prev => {
+        const filtered = (prev.scheduleEvents || []).filter(e => e.id !== id);
+        const updated = { ...prev, scheduleEvents: filtered };
+        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+        return updated;
+      });
+
       try {
         const res = await fetch(`/api/teacher/events/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -1855,6 +1973,26 @@ export default function App() {
   const handleDeleteStudySheetTemplate = async (id: string) => {
     requestConfirmation("Bạn có chắc muốn xóa phiếu học tập mẫu này?", async () => {
       playClickSound();
+
+      // Track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_sheets") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_sheets", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Update state instantly
+      setAppState(prev => {
+        const filtered = (prev.studySheets || []).filter(s => s.id !== id);
+        const updated = { ...prev, studySheets: filtered };
+        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+        return updated;
+      });
+
       try {
         const res = await fetch(`/api/teacher/sheets/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -1870,6 +2008,26 @@ export default function App() {
   const handleDeleteDiscussionThread = async (id: string) => {
     requestConfirmation("Bạn có chắc muốn xóa chủ đề thảo luận này và toàn bộ bình luận của học sinh?", async () => {
       playClickSound();
+
+      // Track as deleted locally
+      try {
+        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_discussions") || "[]");
+        if (!deletedList.includes(id)) {
+          deletedList.push(id);
+          localStorage.setItem("khoahoc4_deleted_discussions", JSON.stringify(deletedList));
+        }
+      } catch (e) {
+        console.error(e);
+      }
+
+      // Update state instantly
+      setAppState(prev => {
+        const filtered = (prev.discussionThreads || []).filter(t => t.id !== id);
+        const updated = { ...prev, discussionThreads: filtered };
+        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+        return updated;
+      });
+
       try {
         const res = await fetch(`/api/discussions/${id}`, { method: "DELETE" });
         const data = await res.json();
@@ -1981,33 +2139,79 @@ export default function App() {
     e.preventDefault();
     if (!currentUser || !parentFeedbackInput.trim()) return;
     playClickSound();
+
+    let sId = currentUser.id;
+    let sName = currentUser.name;
+    let pName = currentUser.name;
+
+    if (currentUser.name.includes(" (PH em ")) {
+      const parts = currentUser.name.split(" (PH em ");
+      pName = "Phụ huynh " + parts[0];
+      sName = parts[1].replace(")", "");
+    } else if (currentUser.name.includes(" (Phụ huynh)")) {
+      const parts = currentUser.name.split(" (Phụ huynh)");
+      pName = "Phụ huynh " + parts[0];
+      sName = "Học sinh";
+    } else {
+      pName = "Phụ huynh của em " + currentUser.name;
+    }
+
+    const tempId = "f_" + Date.now();
+    const newFb = {
+      id: tempId,
+      studentId: sId,
+      studentName: sName,
+      parentName: pName,
+      message: parentFeedbackInput,
+      timestamp: new Date().toISOString()
+    };
+
+    // Update locally immediately for an instant zero-latency feedback loop
+    setAppState(prev => {
+      const updatedList = [newFb, ...(prev.parentFeedback || [])];
+      const updated = { ...prev, parentFeedback: updatedList };
+      localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+      return updated;
+    });
+
+    const bodyContent = {
+      studentId: sId,
+      studentName: sName,
+      parentName: pName,
+      message: parentFeedbackInput
+    };
+
+    setParentFeedbackInput("");
+    playSparkleSound();
+    alert("✉️ Đã gửi tin nhắn phản hồi trực tiếp cho Giáo viên lớp học!");
+
     try {
       const res = await fetch("/api/parent-feedback", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          studentId: currentUser.id.replace(" (Phụ huynh)", ""),
-          studentName: currentUser.name.replace(" (Phụ huynh)", ""),
-          parentName: "Phụ huynh " + currentUser.name.replace(" (Phụ huynh)", ""),
-          message: parentFeedbackInput
-        })
+        body: JSON.stringify(bodyContent)
       });
       const data = await res.json();
       if (data.success) {
-        setParentFeedbackInput("");
-        playSparkleSound();
         if (data.parentFeedback) {
           setAppState(prev => {
-            const updated = { ...prev, parentFeedback: data.parentFeedback };
+            const filteredLocal = (prev.parentFeedback || []).filter(fb => fb.id !== tempId);
+            const map = new Map();
+            data.parentFeedback.forEach((item: any) => map.set(item.id, item));
+            filteredLocal.forEach((item: any) => {
+              if (!map.has(item.id)) map.set(item.id, item);
+            });
+            const mergedList = Array.from(map.values());
+            const updated = { ...prev, parentFeedback: mergedList };
             localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
             return updated;
           });
         }
         fetchState();
-        alert("✉️ Đã gửi tin nhắn phản hồi trực tiếp cho Giáo viên lớp học!");
       }
     } catch (err) {
-      console.error(err);
+      console.error("Failed to send parent feedback online, relying on local instant state:", err);
+      setIsOfflineMode(true);
     }
   };
 
@@ -2125,6 +2329,15 @@ export default function App() {
     requestConfirmation("Hệ thống sẽ làm trống mọi học liệu, phiếu nộp, các điểm danh để bạn cài lại từ đầu. Chắc chắn chứ?", async () => {
       playClickSound();
       try {
+        localStorage.removeItem("khoahoc4_deleted_lessons");
+        localStorage.removeItem("khoahoc4_deleted_students");
+        localStorage.removeItem("khoahoc4_deleted_plans");
+        localStorage.removeItem("khoahoc4_deleted_events");
+        localStorage.removeItem("khoahoc4_deleted_sheets");
+        localStorage.removeItem("khoahoc4_deleted_discussions");
+        localStorage.removeItem("khoahoc4_deleted_feedbacks");
+        localStorage.removeItem("khoahoc4_state");
+
         const res = await fetch("/api/state/reset", { method: "POST" });
         const data = await res.json();
         if (data.success) {
@@ -3276,7 +3489,11 @@ export default function App() {
                               filteredLessonsOfCategory(selectedCategoryPage).map(lesson => (
                                 <div
                                   key={lesson.id}
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    const target = e.target as HTMLElement;
+                                    if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('span[role="button"]')) {
+                                      return;
+                                    }
                                     playClickSound();
                                     setExpandedLessonId(expandedLessonId === lesson.id ? null : lesson.id);
                                   }}
@@ -6381,7 +6598,7 @@ export default function App() {
 
       {/* Custom Confirmation Modal */}
       {confirmModal && confirmModal.isOpen && (
-        <div id="custom-confirm-modal" className="fixed inset-0 bg-zinc-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+        <div id="custom-confirm-modal" className="fixed inset-0 bg-zinc-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[100] animate-fade-in">
           <div className="bg-white rounded-[32px] border-4 border-amber-300 p-6 max-w-sm w-full text-center shadow-2xl flex flex-col items-center gap-4">
             <span className="text-4xl filter drop-shadow">⚠️</span>
             <h3 className="font-black text-amber-955 text-md uppercase">Xác nhận thao tác</h3>
