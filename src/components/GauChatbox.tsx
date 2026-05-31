@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { MessageSquare, Send, X, Sparkles, User, AlertCircle } from "lucide-react";
+import { MessageSquare, Send, X, Sparkles, User, AlertCircle, Settings, Eye, EyeOff, ShieldCheck, Key } from "lucide-react";
 import { playClickSound, playSparkleSound } from "./AudioClick";
 
 interface ChatMessage {
@@ -19,11 +19,30 @@ export default function GauChatbox() {
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempApiKey, setTempApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("custom_gemini_api_key") || "";
+    setCustomApiKey(saved);
+    setTempApiKey(saved);
+  }, []);
+
+  const handleSaveApiKey = () => {
+    playSparkleSound();
+    const cleanKey = tempApiKey.trim();
+    setCustomApiKey(cleanKey);
+    localStorage.setItem("custom_gemini_api_key", cleanKey);
+    setShowSettings(false);
+  };
+
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, isOpen]);
+  }, [messages, isOpen, showSettings]);
 
   const handleToggle = () => {
     playClickSound();
@@ -50,9 +69,16 @@ export default function GauChatbox() {
         text: m.text
       }));
 
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json"
+      };
+      if (customApiKey) {
+        headers["X-Gemini-Key"] = customApiKey;
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ message: userText, history: historyPayload })
       });
 
@@ -86,33 +112,114 @@ export default function GauChatbox() {
           {/* Header Bar */}
           <div className="bg-gradient-to-r from-amber-400 to-orange-400 p-4 flex justify-between items-center text-white border-b-4 border-amber-500">
             <div className="flex items-center gap-2">
-              <span className="text-3xl">🐻</span>
+              <span className="text-3xl animate-wiggle">🐻</span>
               <div>
                 <h3 className="font-black text-sm tracking-wide">GẤU BIẾT TUỐT AI</h3>
                 <p className="text-[10px] text-amber-50 font-bold flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-yellow-200 animate-pulse" /> Nhà khoa học vui tính 🌿
+                  <Sparkles className="w-3 h-3 text-yellow-200 animate-pulse" /> 
+                  {customApiKey ? "🔑 Có khóa Vercel riêng" : "Nhà khoa học vui tính 🌿"}
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleToggle}
-              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4 text-white" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => {
+                  playClickSound();
+                  setShowSettings(!showSettings);
+                }}
+                className={`w-8 h-8 rounded-full ${showSettings ? 'bg-white/40' : 'bg-white/20'} hover:bg-white/40 flex items-center justify-center transition-colors cursor-pointer`}
+                title="Cấu hình Chìa khóa AI"
+              >
+                <Settings className={`w-4 h-4 text-white ${showSettings ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={handleToggle}
+                className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4 text-white" />
+              </button>
+            </div>
           </div>
 
           {/* Quick Notice Banner */}
-          <div className="bg-amber-100/70 p-2 border-b text-[11px] leading-snug text-amber-900 font-medium px-4 flex items-center gap-1.5">
+          <div className="bg-amber-100/70 p-2 border-b text-[11px] leading-snug text-amber-900 font-medium px-4 flex items-center gap-1.5 shrink-0">
             <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
             <span>Gấu sẽ gợi mở từng bước để bạn tự phát hiện ra lời giải tuyệt vời nhất! 🌟</span>
           </div>
 
-          {/* Conversation history */}
-          <div
-            ref={scrollRef}
-            className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#FFFDF2] flex flex-col"
-          >
+          {/* Main Content Area */}
+          {showSettings ? (
+            <div className="flex-1 p-5 overflow-y-auto bg-[#FFFDF2] flex flex-col gap-4 text-zinc-800">
+              <div className="flex items-center gap-2 border-b border-amber-200 pb-2.5">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                <h4 className="font-extrabold text-[12px] uppercase tracking-wider text-amber-955">
+                  Bảo mật khóa Gemini API
+                </h4>
+              </div>
+
+              <div className="text-[11px] leading-relaxed text-zinc-650 font-bold bg-amber-50/50 border border-amber-200/40 p-3 rounded-2xl">
+                Để đảm bảo Gấu hoạt động bảo mật khi cô xuất website ra <strong className="text-emerald-700 font-black">Vercel</strong>, cô có thể dán chìa khóa cá nhân tại đây:
+                <ul className="list-disc pl-4 mt-2 space-y-1">
+                  <li>Khóa lưu cục bộ tại trình duyệt của cô (<strong className="text-amber-900 font-black">Local Storage</strong>).</li>
+                  <li>Truyền đi bảo mật cực cao bằng tiêu đề <strong className="text-emerald-700">HTTPS Request Headers</strong>.</li>
+                </ul>
+              </div>
+
+              <div className="flex flex-col gap-1 mt-2">
+                <label className="text-[10px] font-black uppercase text-zinc-500 block">
+                  Nhập Khóa Gemini API của cô:
+                </label>
+                <div className="flex items-center gap-2 bg-white border-2 border-amber-200 rounded-2xl px-3 py-1 focus-within:border-amber-400">
+                  <Key className="w-4 h-4 text-zinc-400 shrink-0" />
+                  <input
+                    type={showKey ? "text" : "password"}
+                    value={tempApiKey}
+                    onChange={(e) => setTempApiKey(e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="flex-grow bg-transparent border-0 text-xs font-bold font-mono outline-none py-1.5 text-zinc-800 placeholder-zinc-350 min-w-0"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => { playClickSound(); setShowKey(!showKey); }}
+                    className="p-1 text-zinc-400 hover:text-zinc-600 cursor-pointer shrink-0"
+                    title={showKey ? "Ẩn khóa" : "Hiện khóa"}
+                  >
+                    {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+                <p className="text-[10px] font-bold text-zinc-450 italic mt-1 leading-snug">
+                  * Hệ thống sẽ tự động khôi phục dùng khóa mặc định của máy chủ nếu cô để trống và Lưu.
+                </p>
+              </div>
+
+              <div className="flex gap-2.5 mt-auto pt-4 border-t border-amber-100">
+                <button
+                  type="button"
+                  onClick={handleSaveApiKey}
+                  className="flex-grow bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs py-2.5 rounded-xl border border-emerald-700 shadow-md transform hover:-translate-y-0.5 active:translate-y-0 transition-all cursor-pointer text-center"
+                >
+                  LƯU CHÌA KHÓA ✔️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    playClickSound();
+                    setShowSettings(false);
+                  }}
+                  className="px-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 font-extrabold text-xs py-2.5 rounded-xl border border-zinc-300 transition-colors cursor-pointer"
+                >
+                  QUAY LẠI ↩️
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Conversation history */}
+              <div
+                ref={scrollRef}
+                className="flex-1 p-4 overflow-y-auto space-y-3 bg-[#FFFDF2] flex flex-col"
+              >
             {messages.map((m, idx) => {
               const isGau = m.role === 'model';
               return (
@@ -174,8 +281,10 @@ export default function GauChatbox() {
               <Send className="w-4 h-4" />
             </button>
           </form>
-        </div>
+        </>
       )}
+    </div>
+  )}
 
       {/* 2. Floating Clickable Badge */}
       <button

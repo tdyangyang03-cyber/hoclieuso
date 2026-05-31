@@ -17,23 +17,63 @@ let state = {
   lessons: [
     {
       id: "L1",
-      categoryIndex: 0,
-      title: "Tính chất & Vai trò của Nước 💧",
-      type: "video",
-      url: "https://www.youtube.com/embed/fAWh_O4Iqas",
-      description: "Học sinh khám phá các trạng thái tự nhiên của nước, tính chất không màu, không mùi, không vị của nước.",
+      categoryIndex: 1,
+      title: "Bài 1: Nước kì diệu có những trạng thái nào? 💧",
+      description: "Học sinh khám phá các trạng thái tự nhiên của nước: Lỏng, khí, rắn và quá trình chuyển thể kỳ diệu.",
       createdAt: new Date().toISOString(),
-      comments: []
+      comments: [],
+      materials: [
+        {
+          id: "M1",
+          title: "Video bài giảng: Sự chuyển thể của Nước",
+          type: "video",
+          url: "https://www.youtube.com/embed/3gscG70jK10",
+          description: "Xem các thí nghiệm sinh động về nước lỏng sôi biến thành hơi, hơi ngưng tụ, nước đóng băng.",
+          section: "Video bài giảng 📹"
+        },
+        {
+          id: "M2",
+          title: "Tóm tắt: Sơ đồ chu trình tuần hoàn của nước",
+          type: "pdf",
+          url: "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=800&auto=format&fit=crop&q=60",
+          description: "Hình ảnh và sơ đồ minh họa súc tích cho bài học.",
+          section: "Tài liệu đọc & Quan sát 📄"
+        },
+        {
+          id: "M3",
+          title: "Trò chơi câu đố: Các thể của nước",
+          type: "game",
+          url: "https://wordwall.net/embed/7915509",
+          description: "Trả lời thật nhanh các câu hỏi trắc nghiệm tính chất nước nhé!",
+          section: "Vui chơi tương tác 🎮"
+        }
+      ]
     },
     {
       id: "L2",
-      categoryIndex: 1,
-      title: "Ánh sáng và vai trò của ánh sáng trong đời sống ⚡",
-      type: "pdf",
-      url: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=1200&auto=format&fit=crop&q=80",
-      description: "Khám phá nguồn sáng, vật chiếu sáng và đường truyền ánh sáng.",
+      categoryIndex: 2,
+      title: "Bài 2: Nguồn sáng & Sự truyền ánh sáng như thế nào? ⚡",
+      description: "Cơ thể ta nhìn thấy vật bởi ánh sáng từ nguồn truyền tới mắt. Nhưng truyền như thế nào?",
       createdAt: new Date().toISOString(),
-      comments: []
+      comments: [],
+      materials: [
+        {
+          id: "M4",
+          title: "Video Thí nghiệm: Ánh sáng truyền theo đường thẳng",
+          type: "video",
+          url: "https://www.youtube.com/embed/fAWh_O4Iqas",
+          description: "Chứng minh ánh sáng đi thẳng qua ba màng chắn thẳng hàng.",
+          section: "Xem thí nghiệm 🧪"
+        },
+        {
+          id: "M5",
+          title: "Thử thách ghép cặp: Vật tự phát sáng",
+          type: "game",
+          url: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=1200&auto=format&fit=crop&q=80",
+          description: "Phân biệt Mặt Trời, Đom Đóm, Đèn pin với Mặt Trăng, Gương phẳng...",
+          section: "Trò chơi ô chữ 🎮"
+        }
+      ]
     }
   ] as any[],
   students: [
@@ -97,7 +137,7 @@ let state = {
     { id: "t1", title: "Thảo luận: Tại sao nước chảy từ trên cao xuống? 🤔", content: "Hãy cùng suy nghĩ xem trong cuộc sống, hiện tượng này giúp ích gì cho đời sống chúng mình nhé!", isOpen: true, comments: [] }
   ] as any[],
   teacherProfile: {
-    name: "Cô Thùy Dương",
+    name: "admin",
     themeColor: "emerald",
     mode: "light",
     avatar: "👩‍🏫"
@@ -119,22 +159,44 @@ function awardBadgeToStudent(studentId: string, badge: string) {
     }
   }
 }
-function getGeminiClient(): { ai: GoogleGenAI; apiKey: string } | null {
-  let apiKey = process.env.GEMINI_API_KEY;
+function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null {
+  let apiKey = "";
 
-  // 1. If not found in process.env or has a placeholder, try reading it from the root .env file directly
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey === "") {
+  const isPlaceholderKey = (key: string) => {
+    return !key || 
+      key === "MY_GEMINI_API_KEY" || 
+      key === "AIzaSyCnvKVqRk7PNAxrugnEoe-QUTBn0nWb3gk" || 
+      key.includes("YOUR_API_KEY");
+  };
+
+  // 1. Check custom headers for client-provided API key first (fully secure, never exposed, stored in personal browser local storage only)
+  if (req && req.headers) {
+    const headerKey = req.headers["x-gemini-key"] || req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "");
+    if (headerKey && typeof headerKey === "string") {
+      const cleanHeaderKey = headerKey.trim().replace(/^['"]|['"]$/g, '');
+      if (!isPlaceholderKey(cleanHeaderKey)) {
+        apiKey = cleanHeaderKey;
+      }
+    }
+  }
+
+  // 2. Fall back to process.env if header is not present
+  if (!apiKey) {
+    apiKey = process.env.GEMINI_API_KEY || "";
+    apiKey = apiKey.trim().replace(/^['"]|['"]$/g, '');
+  }
+
+  // If the key is empty or a placeholder, try reading from the local .env file
+  if (isPlaceholderKey(apiKey)) {
     try {
       const envPath = path.join(process.cwd(), ".env");
       if (fs.existsSync(envPath)) {
         const envContent = fs.readFileSync(envPath, 'utf-8');
-        const match = envContent.match(/GEMINI_API_KEY\s*=\s*(["'])(.*?)\1/);
-        if (match && match[2]) {
-          apiKey = match[2];
-        } else {
-          const matchNoQuotes = envContent.match(/GEMINI_API_KEY\s*=\s*([^\s]+)/);
-          if (matchNoQuotes && matchNoQuotes[1]) {
-            apiKey = matchNoQuotes[1];
+        const match = envContent.match(/GEMINI_API_KEY\s*=\s*(["'])(.*?)\1/) || envContent.match(/GEMINI_API_KEY\s*=\s*([^\s]+)/);
+        if (match) {
+          const potentialKey = (match[2] || match[1] || "").trim().replace(/^['"]|['"]$/g, '');
+          if (!isPlaceholderKey(potentialKey)) {
+            apiKey = potentialKey;
           }
         }
       }
@@ -143,14 +205,9 @@ function getGeminiClient(): { ai: GoogleGenAI; apiKey: string } | null {
     }
   }
 
-  // 2. If still missing or placeholder, automatically use the provided valid API key as a fallback
-  if (!apiKey || apiKey === "MY_GEMINI_API_KEY" || apiKey === "") {
-    apiKey = "AIzaSyCnvKVqRk7PNAxrugnEoe-QUTBn0nWb3gk";
-  }
-
-  // Strip wrapping quotes
-  apiKey = apiKey.trim().replace(/^['"]|['"]$/g, '');
-  if (apiKey === "MY_GEMINI_API_KEY" || apiKey === "") {
+  // Final check to prevent using placeholder or default invalid keys that cause errors
+  if (isPlaceholderKey(apiKey)) {
+    console.warn("No valid active Gemini API key found (either placeholder or defaulted). Running on elegant offline assistant mode.");
     return null;
   }
 
@@ -197,13 +254,20 @@ app.post("/api/teacher/profile", (req, res) => {
 
 // Create/Edit/Delete Lessons
 app.post("/api/lessons", (req, res) => {
-  const { id, categoryIndex, title, type, url, description } = req.body;
+  const { id, categoryIndex, title, type, url, description, materials } = req.body;
   
   if (id) {
     // Edit existing
     const index = state.lessons.findIndex(l => l.id === id);
     if (index !== -1) {
-      state.lessons[index] = { ...state.lessons[index], title, type, url, description };
+      state.lessons[index] = { 
+        ...state.lessons[index], 
+        title, 
+        type: type || state.lessons[index].type || "video", 
+        url: url || state.lessons[index].url || "", 
+        description,
+        materials: materials || state.lessons[index].materials || []
+      };
     }
   } else {
     // Brand new item
@@ -211,15 +275,69 @@ app.post("/api/lessons", (req, res) => {
       id: "L_" + Date.now(),
       categoryIndex: Number(categoryIndex),
       title,
-      type,
-      url,
+      type: type || "video",
+      url: url || "",
       description,
       createdAt: new Date().toISOString(),
-      comments: []
+      comments: [],
+      materials: materials || []
     };
     state.lessons.push(newLesson);
   }
   res.json({ success: true, lessons: state.lessons });
+});
+
+// Create or Edit Learning Material (Học liệu) within a Lesson
+app.post("/api/lessons/:lessonId/materials", (req, res) => {
+  const { id, title, type, url, description, section } = req.body;
+  const lessonId = req.params.lessonId;
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (lesson) {
+    if (!lesson.materials) {
+      lesson.materials = [];
+    }
+    if (id) {
+      // Edit existing material
+      const mIdx = lesson.materials.findIndex((m: any) => m.id === id);
+      if (mIdx !== -1) {
+        lesson.materials[mIdx] = { 
+          ...lesson.materials[mIdx], 
+          title, 
+          type, 
+          url, 
+          description, 
+          section: section || "Chuyên mục chung" 
+        };
+      }
+    } else {
+      // Add new material
+      const newMaterial = {
+        id: "M_" + Date.now(),
+        title,
+        type: type || "video",
+        url: url || "",
+        description: description || "",
+        section: section || "Nghe và Xem 📹",
+        createdAt: new Date().toISOString()
+      };
+      lesson.materials.push(newMaterial);
+    }
+    res.json({ success: true, lessons: state.lessons });
+  } else {
+    res.status(404).json({ error: "Lesson not found" });
+  }
+});
+
+// Delete Learning Material within a Lesson
+app.delete("/api/lessons/:lessonId/materials/:materialId", (req, res) => {
+  const { lessonId, materialId } = req.params;
+  const lesson = state.lessons.find(l => l.id === lessonId);
+  if (lesson && lesson.materials) {
+    lesson.materials = lesson.materials.filter((m: any) => m.id !== materialId);
+    res.json({ success: true, lessons: state.lessons });
+  } else {
+    res.status(404).json({ error: "Lesson or material not found" });
+  }
 });
 
 // Comment & Rate individual Learning Material
@@ -585,7 +703,7 @@ app.post("/api/chat", async (req, res) => {
   const isOverride = normalizedMessage.includes("khoahoc4") || normalizedMessage.includes("tôi là thùy dương đây") || normalizedMessage.includes("toi la thuy duong day") || normalizedMessage.includes("tôi là thuỳ dương đây");
 
   // Check if API key exists
-  const clientInfo = getGeminiClient();
+  const clientInfo = getGeminiClient(req);
   if (!clientInfo) {
     // Elegant fallback if GEMINI_API_KEY is not configured
     let reply = "";

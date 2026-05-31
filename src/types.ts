@@ -8,15 +8,26 @@ export interface LessonComment {
   timestamp: string;
 }
 
+export interface LearningMaterial {
+  id: string;
+  title: string;
+  type: string;
+  url: string;
+  description?: string;
+  section: string; // e.g. "Video bài học", "Trò chơi tương tác"
+  createdAt?: string;
+}
+
 export interface Lesson {
   id: string;
   categoryIndex: number; // 1-6
   title: string;
-  type: string; // was previously union, widened to support custom types with a '+' button
-  url: string; // embed or link
+  type: string; // fallback / main type
+  url: string; // fallback / main link
   description?: string;
   createdAt?: string;
   comments?: LessonComment[];
+  materials?: LearningMaterial[]; // list of segmented learning materials (học liệu theo chuyên mục)
 }
 
 export interface Student {
