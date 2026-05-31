@@ -169,24 +169,11 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
       key.includes("YOUR_API_KEY");
   };
 
-  // 1. Check custom headers for client-provided API key first (fully secure, never exposed, stored in personal browser local storage only)
-  if (req && req.headers) {
-    const headerKey = req.headers["x-gemini-key"] || req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "");
-    if (headerKey && typeof headerKey === "string") {
-      const cleanHeaderKey = headerKey.trim().replace(/^['"]|['"]$/g, '');
-      if (!isPlaceholderKey(cleanHeaderKey)) {
-        apiKey = cleanHeaderKey;
-      }
-    }
-  }
+  // 1. Prioritize process.env.GEMINI_API_KEY
+  apiKey = process.env.GEMINI_API_KEY || "";
+  apiKey = apiKey.trim().replace(/^['"]|['"]$/g, '');
 
-  // 2. Fall back to process.env if header is not present
-  if (!apiKey) {
-    apiKey = process.env.GEMINI_API_KEY || "";
-    apiKey = apiKey.trim().replace(/^['"]|['"]$/g, '');
-  }
-
-  // If the key is empty or a placeholder, try reading from the local .env file
+  // 2. If the key is empty or a placeholder, try reading from the local .env file
   if (isPlaceholderKey(apiKey)) {
     try {
       const envPath = path.join(process.cwd(), ".env");
@@ -203,6 +190,28 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
     } catch (e) {
       console.error("Direct .env read error:", e);
     }
+  }
+
+  // 3. Fallback to header if provided, but only if process.env isn't set or is a placeholder
+  if (isPlaceholderKey(apiKey) && req && req.headers) {
+    const headerKey = req.headers["x-gemini-key"] || req.headers["authorization"]?.toString().replace(/^Bearer\s+/i, "");
+    if (headerKey && typeof headerKey === "string") {
+      const cleanHeaderKey = headerKey.trim().replace(/^['"]|['"]$/g, '');
+      if (!isPlaceholderKey(cleanHeaderKey)) {
+        apiKey = cleanHeaderKey;
+      }
+    }
+  }
+
+  // Diagnostic log for debugging without leaking full key
+  if (apiKey) {
+    const isPlaceholder = isPlaceholderKey(apiKey);
+    const hiddenKey = apiKey.length > 8 
+      ? `${apiKey.substring(0, 6)}...${apiKey.substring(apiKey.length - 4)}` 
+      : "[SHORT_KEY]";
+    console.log(`[Gemini Auth] Diagnosing API key: length=${apiKey.length}, preview=${hiddenKey}, isPlaceholder=${isPlaceholder}`);
+  } else {
+    console.log("[Gemini Auth] Diagnosing API key: No API key provided.");
   }
 
   // Final check to prevent using placeholder or default invalid keys that cause errors
