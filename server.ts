@@ -2,10 +2,17 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createServer as createViteServer } from "vite";
 
 dotenv.config();
+
+// Standard interface for requested GoogleGenAI wrapper Compatibility
+class GoogleGenAI extends GoogleGenerativeAI {
+  constructor(config: { apiKey: string }) {
+    super(config.apiKey || "");
+  }
+}
 
 const app = express();
 const PORT = 3000;
@@ -166,8 +173,7 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
     return !key || 
       key === "MY_GEMINI_API_KEY" || 
       key === "AIzaSyCnvKVqRk7PNAxrugnEoe-QUTBn0nWb3gk" || 
-      key.includes("YOUR_API_KEY") ||
-      !key.startsWith("AIzaSy");
+      key.includes("YOUR_API_KEY");
   };
 
   // 1. Prioritize process.env.GEMINI_API_KEY
@@ -222,12 +228,7 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
   }
 
   const ai = new GoogleGenAI({
-    apiKey: apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
-      }
-    }
+    apiKey: apiKey
   });
   return { ai, apiKey };
 }
@@ -700,6 +701,31 @@ app.delete("/api/discussions/:id", (req, res) => {
   res.json({ success: true, discussionThreads: state.discussionThreads });
 });
 
+// Unified Helper for Gấu Biết Tuốt Offline Fallbacks
+function getOfflineReply(message: string, isOverride: boolean): string {
+  const normalizedMessage = message.toLowerCase();
+  
+  if (isOverride) {
+    return "Chào cô Thùy Dương ạ! Trợ lý ảo đã bí mật rũ bỏ mọi luật lệ dạy trẻ nhỏ. Gấu hôm nay đã sẵn sàng đáp ứng mọi yêu cầu soạn học liệu, chi tiết đáp án giáo án khoa học lớp 4 trực tiếp cho cô Thùy Dương và cô Nguyễn Phượng!";
+  }
+  
+  if (normalizedMessage.includes("đáp án") || normalizedMessage.includes("cho xin dap an") || normalizedMessage.includes("cho xin đáp án")) {
+    return "Mình hiểu bạn đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp bạn tự tìm ra cơ. Mình sẽ đi cùng bạn từng bước nhé! Tiếc là lúc này Gấu đang ở chế độ ngoại tuyến (Chưa cắm chìa khóa AI). Bạn hãy thảo luận cùng các bạn và cô giáo nhé!";
+  } else if (normalizedMessage.includes("nước") || normalizedMessage.includes("nuoc")) {
+    return "Mình thấy bạn đang hỏi về Nước đúng không? Nước vô cùng kì diệu! Ở nhiệt độ thường, nước ở thể lỏng, không màu, không mùi, không vị. Khi đun sôi lên 100 độ C, nước tinh khiết sẽ chuyển sang thể khí (hơi nước). Còn nếu cho vào ngăn đá dưới 0 độ C, nước lại hóa rắn (băng/đá). Bạn có biết dòng sông hay cơn mưa được hình thành từ chu trình tuần hoàn nào của nước không?";
+  } else if (normalizedMessage.includes("năng lượng") || normalizedMessage.includes("nang luong")) {
+    return "Mình thấy bạn đang hỏi về Năng lượng đúng không? Trong chương trình Khoa học 4, chúng mình được biết Mặt Trời là nguồn năng lượng khổng lồ cung cấp ánh sáng và nhiệt cho Trái Đất. Nhờ có Mặt Trời, thực vật mới quang hợp, con người mới sưởi ấm và phơi khô quần áo. Ngoài ra, gió và nước chảy dồi dào cũng là nguồn năng lượng sạch tuyệt vời để quay tuabin máy phát điện! Bạn có biết thiết bị nào ở nhà mình đang tận dụng năng lượng Mặt Trời không?";
+  } else if (normalizedMessage.includes("không khí") || normalizedMessage.includes("khong khi")) {
+    return "Mình thấy bạn đang hỏi về Không khí đúng không? Không khí có ở xung quanh chúng mình, không màu, không mùi, không vị và không có hình dạng nhất định. Không khí gồm hai thành phần chính là khí nitơ và khí ô-xy (giúp duy trì sự sống và sự cháy). Bạn thử nghĩ xem, loài cây xanh hấp thụ khí gì vào ban đêm và nhả ra khí gì vào ban ngày nhỉ?";
+  } else if (normalizedMessage.includes("nấm") || normalizedMessage.includes("nam")) {
+    return "Mình thấy bạn đang hỏi về loài Nấm đúng không? Nấm vô cùng đa dạng! Có những loại nấm ăn rất ngon và bổ dưỡng như nấm hương, nấm rơm, nấm đùi gà. Nhưng cũng có những loại nấm mốc làm hỏng thức ăn, hay nấm độc cực kỳ nguy hiểm có màu sặc sỡ ở trong rừng sâu. Bạn có biết điểm khác biệt lớn nhất giữa một cây nấm và một cây hoa thông thường là gì không?";
+  } else if (normalizedMessage.includes("ánh sáng") || normalizedMessage.includes("anh sang")) {
+    return "Mình thấy bạn đang hỏi về Ánh sáng đúng không? Ánh sáng truyền theo đường thẳng và giúp chúng mình nhìn thấy mọi vật xung quanh. Mặt Trời, ngọn nến đang cháy, hay bóng đèn điện là những vật tự phát sáng. Còn Mặt Trăng hay quyển sách chỉ là vật được chiếu sáng thôi! Bạn có biết tại sao khi chúng mình đi nắng lại xuất hiện một chiếc bóng tối tăm ở phía sau không?";
+  }
+  
+  return "Mình thấy bạn đang hỏi về bài học đúng không? Vì chìa khóa AI của hệ thống chưa được cắm vào nên Gấu tạm thời nói chuyện ngoại tuyến nhẹ nhàng thế này thôi. Bạn hãy thử hỏi Gấu về các chủ đề lớp 4 đầy thú vị như \"Nước\", \"Không khí\", \"Nấm\", \"Ánh sáng\" hay \"Năng lượng\" xem sao nhé!";
+}
+
 // Gemini Scientific Chatbox: "Gấu Biết Tuốt"
 app.post("/api/chat", async (req, res) => {
   const { message, history } = req.body;
@@ -715,29 +741,8 @@ app.post("/api/chat", async (req, res) => {
   // Check if API key exists
   const clientInfo = getGeminiClient(req);
   if (!clientInfo) {
-    // Elegant fallback if GEMINI_API_KEY is not configured
-    let reply = "";
-    if (isOverride) {
-      reply = "Chào cô Thùy Dương ạ! Trợ lý ảo đã bí mật rũ bỏ mọi luật lệ dạy trẻ nhỏ. Gấu hôm nay đã sẵn sàng đáp ứng mọi yêu cầu soạn học liệu, chi tiết đáp án giáo án khoa học lớp 4 trực tiếp cho cô Thùy Dương và cô Nguyễn Phượng!";
-    } else {
-      // Check if student wants direct answer in guest fallback
-      if (normalizedMessage.includes("đáp án") || normalizedMessage.includes("cho xin dap an") || normalizedMessage.includes("cho xin đáp án")) {
-        reply = "Mình hiểu bạn đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp bạn tự tìm ra cơ. Mình sẽ đi cùng bạn từng bước nhé! Tiếc là lúc này Gấu đang ở chế độ ngoại tuyến (Chưa cắm chìa khóa AI). Bạn hãy thảo luận cùng các bạn và cô giáo nhé!";
-      } else if (normalizedMessage.includes("nước") || normalizedMessage.includes("nuoc")) {
-        reply = "Mình thấy bạn đang hỏi về Nước đúng không? Nước vô cùng kì diệu! Ở nhiệt độ thường, nước ở thể lỏng, không màu, không mùi, không vị. Khi đun sôi lên 100 độ C, nước tinh khiết sẽ chuyển sang thể khí (hơi nước). Còn nếu cho vào ngăn đá dưới 0 độ C, nước lại hóa rắn (băng/đá). Bạn có biết dòng sông hay cơn mưa được hình thành từ chu trình tuần hoàn nào của nước không?";
-      } else if (normalizedMessage.includes("năng lượng") || normalizedMessage.includes("nang luong")) {
-        reply = "Mình thấy bạn đang hỏi về Năng lượng đúng không? Trong chương trình Khoa học 4, chúng mình được biết Mặt Trời là nguồn năng lượng khổng lồ cung cấp ánh sáng và nhiệt cho Trái Đất. Nhờ có Mặt Trời, thực vật mới quang hợp, con người mới sưởi ấm và phơi khô quần áo. Ngoài ra, gió và nước chảy dồi dào cũng là nguồn năng lượng sạch tuyệt vời để quay tuabin máy phát điện! Bạn có biết thiết bị nào ở nhà mình đang tận dụng năng lượng Mặt Trời không?";
-      } else if (normalizedMessage.includes("không khí") || normalizedMessage.includes("khong khi")) {
-        reply = "Mình thấy bạn đang hỏi về Không khí đúng không? Không khí có ở xung quanh chúng mình, không màu, không mùi, không vị và không có hình dạng nhất định. Không khí gồm hai thành phần chính là khí nitơ và khí ô-xy (giúp duy trì sự sống và sự cháy). Bạn thử nghĩ xem, loài cây xanh hấp thụ khí gì vào ban đêm và nhả ra khí gì vào ban ngày nhỉ?";
-      } else if (normalizedMessage.includes("nấm") || normalizedMessage.includes("nam")) {
-        reply = "Mình thấy bạn đang hỏi về loài Nấm đúng không? Nấm vô cùng đa dạng! Có những loại nấm ăn rất ngon và bổ dưỡng như nấm hương, nấm rơm, nấm đùi gà. Nhưng cũng có những loại nấm mốc làm hỏng thức ăn, hay nấm độc cực kỳ nguy hiểm có màu sặc sỡ ở trong rừng sâu. Bạn có biết điểm khác biệt lớn nhất giữa một cây nấm và một cây hoa thông thường là gì không?";
-      } else if (normalizedMessage.includes("ánh sáng") || normalizedMessage.includes("anh sang")) {
-        reply = "Mình thấy bạn đang hỏi về Ánh sáng đúng không? Ánh sáng truyền theo đường thẳng và giúp chúng mình nhìn thấy mọi vật xung quanh. Mặt Trời, ngọn nến đang cháy, hay bóng đèn điện là những vật tự phát sáng. Còn Mặt Trăng hay quyển sách chỉ là vật được chiếu sáng thôi! Bạn có biết tại sao khi chúng mình đi nắng lại xuất hiện một chiếc bóng tối tăm ở phía sau không?";
-      } else {
-        reply = `Mình thấy bạn đang hỏi về bài học đúng không? Vì chìa khóa AI của hệ thống chưa được cắm vào nên Gấu tạm thời nói chuyện ngoại tuyến nhẹ nhàng thế này thôi. Bạn hãy thử hỏi Gấu về các chủ đề lớp 4 đầy thú vị như "Nước", "Không khí", "Nấm", "Ánh sáng" hay "Năng lượng" xem sao nhé!`;
-      }
-    }
-    return res.json({ reply });
+    const fallbackText = getOfflineReply(message, isOverride);
+    return res.json({ reply: fallbackText });
   }
 
   const { ai } = clientInfo;
@@ -848,25 +853,35 @@ KHÔNG BAO GIỜ LÀM:
       });
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents,
-      config: {
-        systemInstruction: systemPrompt,
-        temperature: 0.6,
+    // Initialize Generative Model exactly following the requested SDK structure
+    const model = ai.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      systemInstruction: systemPrompt
+    });
+
+    // Call generateContent exactly following the requested SDK pattern
+    const result = await model.generateContent({
+      contents: contents,
+      generationConfig: {
+        temperature: 0.6
       }
     });
 
-    const textOutput = response.text || "Mình chưa hiểu rõ câu hỏi của bạn, bạn thương lượng với mình kỹ hơn nhé!";
+    const response = await result.response;
+    const textOutput = response.text() || "Mình chưa hiểu rõ câu hỏi của bạn, bạn thương lượng với mình kỹ hơn nhé!";
     res.json({ reply: textOutput });
     
   } catch (err: any) {
-    console.error("Gemini API Error:", err);
+    console.error("Gemini API Error in chat handler:", err);
     let errorMessage = err?.message || String(err);
     // Secure masking: ensure no active API keys are ever leaked in error strings
     errorMessage = errorMessage.replace(/AIzaSy[a-zA-Z0-9_\-]{33}/g, "AIzaSy[MASKED]");
-    res.status(500).json({ 
-      error: "Gấu đang bận một chút rồi, mình hỏi lại sau nhé!", 
+    
+    // Provide diagnostic details instead of generic 'unplugged key' to help teachers and students troubleshoot online access
+    const errorText = `Gấu gặp lỗi kết nối trực tuyến: "${errorMessage}". Gấu đã tạm thời kích hoạt chế độ tự học ngoại tuyến nhé!`;
+    res.json({ 
+      reply: errorText,
+      error: "API_CALL_ERROR",
       details: errorMessage
     });
   }
