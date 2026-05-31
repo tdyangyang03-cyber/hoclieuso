@@ -155,6 +155,57 @@ let state = {
   ] as string[]
 };
 
+// --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL & CONTAINERS ---
+const STATE_FILE_PATH = process.env.VERCEL ? "/tmp/khoahoc4_state.json" : path.join(process.cwd(), "state.json");
+
+function loadPersistedState() {
+  try {
+    if (fs.existsSync(STATE_FILE_PATH)) {
+      const content = fs.readFileSync(STATE_FILE_PATH, "utf-8");
+      const parsed = JSON.parse(content);
+      if (parsed) {
+        state = { ...state, ...parsed };
+        console.log("[Persistence System] Successfully restored application state from:", STATE_FILE_PATH);
+      }
+    } else {
+      console.log("[Persistence System] No existing state file found. Starting fresh.");
+    }
+  } catch (err) {
+    console.error("[Persistence System] Critical error while reading persisted state:", err);
+  }
+}
+
+function savePersistedState() {
+  try {
+    fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
+    console.log("[Persistence System] Persisted state successfully to:", STATE_FILE_PATH);
+  } catch (err) {
+    console.error("[Persistence System] Critical error while writing persisted state:", err);
+  }
+}
+
+// Automatically load state on application boot
+loadPersistedState();
+
+// Express Response Interceptor Middleware to capture any State Mutations & backup
+app.use((req: any, res: any, next: any) => {
+  const originalJson = res.json;
+  res.json = function(body: any) {
+    const result = originalJson.call(this, body);
+    if (req.method !== "GET" && res.statusCode >= 200 && res.statusCode < 300) {
+      setTimeout(() => {
+        try {
+          savePersistedState();
+        } catch (e) {
+          console.error("[Persistence Middleware] Async fallback write failed:", e);
+        }
+      }, 0);
+    }
+    return result;
+  };
+  next();
+});
+
 function awardBadgeToStudent(studentId: string, badge: string) {
   const student = state.students.find(s => s.id === studentId);
   if (student) {
@@ -596,6 +647,12 @@ app.post("/api/parent-feedback/reply", (req, res) => {
     feedback.teacherReply = reply;
     feedback.replyTimestamp = new Date().toISOString();
   }
+  res.json({ success: true, parentFeedback: state.parentFeedback });
+});
+
+app.post("/api/parent-feedback/delete", (req, res) => {
+  const { feedbackId } = req.body;
+  state.parentFeedback = state.parentFeedback.filter(f => f.id !== feedbackId);
   res.json({ success: true, parentFeedback: state.parentFeedback });
 });
 

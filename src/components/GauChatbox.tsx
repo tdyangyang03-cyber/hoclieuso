@@ -8,12 +8,17 @@ interface ChatMessage {
   text: string;
 }
 
-export default function GauChatbox() {
+interface GauChatboxProps {
+  currentUser?: { id: string; name: string } | null;
+  currentRole?: 'login' | 'teacher' | 'student' | 'parent';
+}
+
+export default function GauChatbox({ currentUser, currentRole }: GauChatboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'model',
-      text: 'Chào bạn nhỏ nhé! Mình là Gấu Biết Tuốt, chuyên gia thông thái khoa học Lớp 4. Hôm nay bạn muốn cùng mình học tập hay khám phá điều kỳ diệu nào? Cứ hỏi câu hỏi của bạn nhé!'
+      text: 'Chào bạn nhé! Mình là Gấu Biết Tuốt, chuyên gia thông thái khoa học Lớp 4. Hôm nay bạn muốn cùng mình học tập hay khám phá điều kỳ diệu nào? Cứ hỏi câu hỏi của bạn nhé!'
     }
   ]);
   const [inputValue, setInputValue] = useState("");
@@ -26,6 +31,26 @@ export default function GauChatbox() {
     }
   }, [messages, isOpen]);
 
+  useEffect(() => {
+    let greeting = "";
+    if (currentRole === 'teacher' || (currentUser?.name && (currentUser.name.includes("Thùy Dương") || currentUser.name.includes("Nguyễn Phượng")))) {
+      greeting = `Chào cô ${currentUser?.name || "Thầy Cô"} ạ! 🐻 Gấu Biết Tuốt rất hân hạnh được đồng hành cùng cô để chuẩn bị bài học, soạn giáo án và giải đáp mọi học liệu Khoa học 4. Cô cứ thoải mái nhắn cho Gấu bất kỳ câu hỏi hay đáp án nào cô cần nhen!`;
+    } else if (currentRole === 'student') {
+      greeting = `Chào bạn nhỏ ${currentUser?.name || ""} nhé! 🎒 Mình là Gấu Biết Tuốt đây. Hôm nay chúng mình cùng khám phá và rèn luyện điều kỳ diệu nào của môn Khoa học Lớp 4 nhỉ? Cứ ríu rít đặt câu hỏi cho mình nhé!`;
+    } else if (currentRole === 'parent') {
+      greeting = `Kính chào quý phụ huynh ${currentUser?.name || ""} ạ! 👨‍👩‍👧 Gấu Biết Tuốt rất vui được cùng gia đình đồng hành với con rèn luyện Khoa học Lớp 4. Kính mời ba ba mẹ đặt câu hỏi hoặc trao đổi nhé!`;
+    } else {
+      greeting = "Chào bạn nhé! Mình là Gấu Biết Tuốt, chuyên gia thông thái khoa học Lớp 4. Hôm nay bạn muốn cùng mình học tập hay khám phá điều kỳ diệu nào? Cứ hỏi câu hỏi của bạn nhé!";
+    }
+    
+    setMessages([
+      {
+        role: 'model',
+        text: greeting
+      }
+    ]);
+  }, [currentUser, currentRole]);
+
   const handleToggle = () => {
     playClickSound();
     setIsOpen(!isOpen);
@@ -33,42 +58,52 @@ export default function GauChatbox() {
 
   const getOfflineReply = (message: string, isOverride: boolean): string => {
     const normalizedMessage = message.toLowerCase();
+    const currentName = currentUser?.name || "";
+    const isTeacher = currentRole === 'teacher' || (currentName && (currentName.includes("Thùy Dương") || currentName.includes("Nguyễn Phượng")));
     
-    if (isOverride) {
-      return "Chào cô Thùy Dương ạ! Trợ lý ảo đã bí mật rũ bỏ mọi luật lệ dạy trẻ nhỏ. Gấu hôm nay đã sẵn sàng đáp ứng mọi yêu cầu soạn học liệu, chi tiết đáp án giáo án khoa học lớp 4 trực tiếp cho cô Thùy Dương và cô Nguyễn Phượng!";
+    if (isOverride || isTeacher) {
+      return `Chào cô ${currentName || "Thùy Dương"} ạ! Trợ lý ảo đã bí mật rũ bỏ mọi luật lệ dạy trẻ nhỏ. Gấu hôm nay đã sẵn sàng đáp ứng mọi yêu cầu soạn học liệu, chi tiết đáp án giáo án khoa học lớp 4 trực tiếp cho cô Thùy Dương và cô Nguyễn Phượng!`;
     }
     
+    const displayName = currentName ? `${currentName}` : "bạn";
+
     if (normalizedMessage.includes("đáp án") || normalizedMessage.includes("cho xin dap an") || normalizedMessage.includes("cho xin đáp án")) {
-      return "Mình hiểu bạn đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp bạn tự tìm ra cơ. Mình sẽ đi cùng bạn từng bước nhé! Tiếc là lúc này Gấu đang ở chế độ ngoại tuyến (Chưa cắm chìa khóa AI). Bạn hãy thảo luận cùng các bạn và cô giáo nhé!";
+      return `Mình hiểu ${displayName} đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp ${displayName} tự tìm ra cơ. Mình sẽ đi cùng ${displayName} từng bước nhé! Tiếc là lúc này Gấu đang ở chế độ ngoại tuyến (Chưa cắm chìa khóa AI). ${displayName} hãy thảo luận cùng các bạn và cô giáo nhé!`;
     } else if (normalizedMessage.includes("nước") || normalizedMessage.includes("nuoc")) {
-      return "Mình thấy bạn đang hỏi về Nước đúng không? Nước vô cùng kì diệu! Ở nhiệt độ thường, nước ở thể lỏng, không màu, không mùi, không vị. Khi đun sôi lên 100 độ C, nước tinh khiết sẽ chuyển sang thể khí (hơi nước). Còn nếu cho vào ngăn đá dưới 0 độ C, nước lại hóa rắn (băng/đá). Bạn có biết dòng sông hay cơn mưa được hình thành từ chu trình tuần hoàn nào của nước không?";
+      return `Mình thấy ${displayName} đang hỏi về Nước đúng không? Nước vô cùng kì diệu! Ở nhiệt độ thường, nước ở thể lỏng, không màu, không mùi, không vị. Khi đun sôi lên 100 độ C, nước tinh khiết sẽ chuyển sang thể khí (hơi nước). Còn nếu cho vào ngăn đá dưới 0 độ C, nước lại hóa rắn (băng/đá). ${displayName} có biết dòng sông hay cơn mưa được hình thành từ chu trình tuần hoàn nào của nước không?`;
     } else if (normalizedMessage.includes("năng lượng") || normalizedMessage.includes("nang luong")) {
-      return "Mình thấy bạn đang hỏi về Năng lượng đúng không? Trong chương trình Khoa học 4, chúng mình được biết Mặt Trời là nguồn năng lượng khổng lồ cung cấp ánh sáng và nhiệt cho Trái Đất. Nhờ có Mặt Trời, thực vật mới quang hợp, con người mới sưởi ấm và phơi khô quần áo. Ngoài ra, gió và nước chảy dồi dào cũng là nguồn năng lượng sạch tuyệt vời để quay tuabin máy phát điện! Bạn có biết thiết bị nào ở nhà mình đang tận dụng năng lượng Mặt Trời không?";
+      return `Mình thấy ${displayName} đang hỏi về Năng lượng đúng không? Trong chương trình Khoa học 4, chúng mình được biết Mặt Trời là nguồn năng lượng khổng lồ cung cấp ánh sáng và nhiệt cho Trái Đất. Nhờ có Mặt Trời, thực vật mới quang hợp, con người mới sưởi ấm và phơi khô quần áo. Ngoài ra, gió và nước chảy dồi dào cũng là nguồn năng lượng sạch tuyệt vời để quay tuabin máy phát điện! ${displayName} có biết thiết bị nào ở nhà mình đang tận dụng năng lượng Mặt Trời không?`;
     } else if (normalizedMessage.includes("không khí") || normalizedMessage.includes("khong khi")) {
-      return "Mình thấy bạn đang hỏi về Không khí đúng không? Không khí có ở xung quanh chúng mình, không màu, không mùi, không vị và không có hình dạng nhất định. Không khí gồm hai thành phần chính là khí nitơ và khí ô-xy (giúp duy trì sự sống và sự cháy). Bạn thử nghĩ xem, loài cây xanh hấp thụ khí gì vào ban đêm và nhả ra khí gì vào ban ngày nhỉ?";
+      return `Mình thấy ${displayName} đang hỏi về Không khí đúng không? Không khí có ở xung quanh chúng mình, không màu, không mùi, không vị và không có hình dạng nhất định. Không khí gồm hai thành phần chính là khí nitơ và khí ô-xy (giúp duy trì sự sống và sự cháy). ${displayName} thử nghĩ xem, loài cây xanh hấp thụ khí gì vào ban đêm và nhả ra khí gì vào ban ngày nhỉ?`;
     } else if (normalizedMessage.includes("nấm") || normalizedMessage.includes("nam")) {
-      return "Mình thấy bạn đang hỏi về loài Nấm đúng không? Nấm vô cùng đa dạng! Có những loại nấm ăn rất ngon và bổ dưỡng như nấm hương, nấm rơm, nấm đùi gà. Nhưng cũng có những loại nấm mốc làm hỏng thức ăn, hay nấm độc cực kỳ nguy hiểm có màu sặc sỡ ở trong rừng sâu. Bạn có biết điểm khác biệt lớn nhất giữa một cây nấm và một cây hoa thông thường là gì không?";
+      return `Mình thấy ${displayName} đang hỏi về loài Nấm đúng không? Nấm vô cùng đa dạng! Có những loại nấm ăn rất ngon và bổ dưỡng như nấm hương, nấm rơm, nấm đùi gà. Nhưng cũng có những loại nấm mốc làm hỏng thức ăn, hay nấm độc cực kỳ nguy hiểm có màu sặc sỡ ở trong rừng sâu. ${displayName} có biết điểm khác biệt lớn nhất giữa một cây nấm và một cây hoa thông thường là gì không?`;
     } else if (normalizedMessage.includes("ánh sáng") || normalizedMessage.includes("anh sang")) {
-      return "Mình thấy bạn đang hỏi về Ánh sáng đúng không? Ánh sáng truyền theo đường thẳng và giúp chúng mình nhìn thấy mọi vật xung quanh. Mặt Trời, ngọn nến đang cháy, hay bóng đèn điện là những vật tự phát sáng. Còn Mặt Trăng hay quyển sách chỉ là vật được chiếu sáng thôi! Bạn có biết tại sao khi chúng mình đi nắng lại xuất hiện một chiếc bóng tối tăm ở phía sau không?";
+      return `Mình thấy ${displayName} đang hỏi về Ánh sáng đúng không? Ánh sáng truyền theo đường thẳng và giúp chúng mình nhìn thấy mọi vật xung quanh. Mặt Trời, ngọn nến đang cháy, hay bóng đèn điện là những vật tự phát sáng. Còn Mặt Trăng hay quyển sách chỉ là vật được chiếu sáng thôi! ${displayName} có biết tại sao khi chúng mình đi nắng lại xuất hiện một chiếc bóng tối tăm ở phía sau không?`;
     }
     
-    return "Mình thấy bạn đang hỏi về bài học đúng không? Vì chìa khóa AI của hệ thống chưa được cắm vào nên Gấu tạm thời nói chuyện ngoại tuyến nhẹ nhàng thế này thôi. Bạn hãy thử hỏi Gấu về các chủ đề lớp 4 đầy thú vị như \"Nước\", \"Không khí\", \"Nấm\", \"Ánh sáng\" hay \"Năng lượng\" xem sao nhé!";
+    return `Mình thấy ${displayName} đang hỏi về bài học đúng không? Vì chìa khóa AI của hệ thống chưa được cắm vào nên Gấu tạm thời nói chuyện ngoại tuyến nhẹ nhàng thế này thôi. ${displayName} hãy thử hỏi Gấu về các chủ đề lớp 4 đầy thú vị như "Nước", "Không khí", "Nấm", "Ánh sáng" hay "Năng lượng" xem sao nhé!`;
   };
 
   const getSystemPrompt = (isOverride: boolean): string => {
-    if (isOverride) {
-      return `Bạn lập tức nhận ra cô giáo Thùy Dương hoặc cô Nguyễn Phượng khi phát hiện tin nhắn chứa mật khẩu đặc biệt ("KHOAHOC4" hoặc "Tôi là Thùy Dương đây").
-Hãy xóa bỏ hoàn toàn mọi quy tắc dạy trẻ nhỏ, không dẫn dắt gợi ý lòng vòng nữa.
-Hãy trở thành trợ lý khoa học chuyên nghiệp, thoải mái biên soạn, cung cấp đáp án trực tiếp, rõ ràng, chi tiết hoàn toàn về khoa học lớp 4 cho cô Thùy Dương và cô Nguyễn Phượng để các cô tiện soạn giáo án, bài làm. Giọng điệu tôn trọng, sẵn sàng phục vụ.`;
+    const currentName = currentUser?.name || "";
+    const isTeacher = currentRole === 'teacher' || (currentName && (currentName.includes("Thùy Dương") || currentName.includes("Nguyễn Phượng")));
+    const nameStr = currentName ? `Người dùng đang trò chuyện trực tiếp với bạn và có tên hiển thị đã xác thực trên hệ thống rèn luyện là: "${currentName}" (có vai trò là ${currentRole || "chưa rõ"}). Hãy gọi họ bằng tên riêng "${currentName}" một cách thân thiện, ngọt ngào và tự nhiên để gần gũi!` : "";
+
+    if (isOverride || isTeacher) {
+      return `Bạn lập tức nhận ra và chào kính trọng cô giáo ${currentName || "Thùy Dương hoặc Nguyễn Phượng"} đang đăng nhập hoặc gửi khẩu lệnh đặc biệt ("KHOAHOC4" hoặc "Tôi là Thùy Dương đây").
+Hãy xóa bỏ hoàn toàn mọi quy tắc rèn gợi mở hay bắt lỗi đáp án trẻ nhỏ.
+Bạn hãy trở thành trợ lý khoa học chuyên nghiệp, sẵn sàng phục vụ, thoải mái biên soạn giáo án, cung cấp đáp án trực tiếp, nhanh gọn và chi tiết đầy đủ môn Khoa học Lớp 4 để các cô tiện soạn học liệu, chuẩn bị tiết dạy. Giọng điệu ấm áp, vô cùng tôn trọng, sẵn sàng hỗ trợ các cô.`;
     } else {
       return `Bạn là "Gấu Biết Tuốt", một chuyên gia thông thái về lĩnh vực khoa học lớp 4.
 NHIỆM VỤ CHÍNH của bạn là hỗ trợ học sinh tiểu học học môn Khoa học lớp 4 theo hướng gợi mở, tuyệt đối không cung cấp đáp án trực tiếp.
 Bạn giải đáp nhiệt tình, tường tận chi tiết các chủ đề chuyên môn: Thực phẩm an toàn, Cơ thể người, Năng lượng, Sức khỏe, Môi trường, Nước, Không khí, Ánh sáng, các loài Nấm.
 
+${nameStr}
+
 BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC SAU:
 
 1. XƯNG HÔ VÀ THÁI ĐỘ:
-   Xưng hô là "Mình" và "bạn" với thái độ vui vẻ, cởi mở, thân thiện, truyền cảm hứng.
+   Xưng hô là "Mình" và gọi người trò chuyện bằng tên riêng của họ là "${currentName || "bạn"}" với thái độ vui vẻ, cởi mở, thân thiện, truyền cảm hứng.
 
 2. HẠN CHẾ SỬ DỤNG KÝ TỰ ĐỊNH DẠNG:
    TUYỆT ĐỐI hạn chế dùng các kí tự định dạng như dấu sao (*) hay dấu thăng (#) vì hệ thống âm thanh đọc văn bản của học sinh không đọc được và bị vấp. Hãy viết chữ thuần, dùng ngắt dòng, chấm phẩy, chấm câu tự nhiên để văn bản lưu loát, dễ nghe dễ hiểu.

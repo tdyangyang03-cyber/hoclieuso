@@ -497,17 +497,76 @@ export default function App() {
       }
       const data = await res.json();
       if (data) {
-        setAppState(data);
-        localStorage.setItem("khoahoc4_state", JSON.stringify(data));
+        // Smart merge server state with local state to survive Vercel stateless container cycles
+        let merged = data;
+        const local = localStorage.getItem("khoahoc4_state");
+        if (local) {
+          try {
+            const parsedLocal = JSON.parse(local);
+            if (parsedLocal) {
+              const mergeById = (localArr: any[] = [], serverArr: any[] = [], idKey = "id") => {
+                const map = new Map();
+                // Load all server elements first
+                serverArr.forEach(item => {
+                  if (item && item[idKey]) map.set(item[idKey], item);
+                });
+                // Load/merge local elements (do not overwrite server state if they match perfectly, but keep local items if not in server)
+                localArr.forEach(item => {
+                  if (item && item[idKey]) {
+                    if (map.has(item[idKey])) {
+                      const serverItem = map.get(item[idKey]);
+                      // For parentFeedback and others, preserve properties
+                      map.set(item[idKey], { ...item, ...serverItem });
+                    } else {
+                      map.set(item[idKey], item);
+                    }
+                  }
+                });
+                return Array.from(map.values());
+              };
+
+              const deletedFeedbacks = (() => {
+                try {
+                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
+                } catch {
+                  return [];
+                }
+              })();
+
+              // Safely merge arrays to ensure nothing from local is lost
+              merged = {
+                ...data,
+                lessons: mergeById(parsedLocal.lessons, data.lessons),
+                students: mergeById(parsedLocal.students, data.students),
+                workbookSubmissions: mergeById(parsedLocal.workbookSubmissions, data.workbookSubmissions),
+                mindmapSubmissions: mergeById(parsedLocal.mindmapSubmissions, data.mindmapSubmissions),
+                parentFeedback: mergeById(parsedLocal.parentFeedback, data.parentFeedback).filter(fb => fb && !deletedFeedbacks.includes(fb.id)),
+                discussionThreads: mergeById(parsedLocal.discussionThreads, data.discussionThreads),
+                teacherNotes: mergeById(parsedLocal.teacherNotes, data.teacherNotes),
+                lessonPlans: mergeById(parsedLocal.lessonPlans, data.lessonPlans),
+                scheduleEvents: mergeById(parsedLocal.scheduleEvents, data.scheduleEvents),
+                studySheets: mergeById(parsedLocal.studySheets, data.studySheets),
+                gradesAndComments: mergeById(parsedLocal.gradesAndComments, data.gradesAndComments),
+                attendanceDays: Array.from(new Set([...(parsedLocal.attendanceDays || []), ...(data.attendanceDays || [])])),
+                teacherProfile: { ...parsedLocal.teacherProfile, ...data.teacherProfile }
+              };
+            }
+          } catch (err) {
+            console.warn("Local storage state merge issue:", err);
+          }
+        }
+
+        setAppState(merged);
+        localStorage.setItem("khoahoc4_state", JSON.stringify(merged));
         setIsOfflineMode(false);
         // Pre-fill teacher notes text if empty initially
-        if (data.teacherNotes && data.teacherNotes[0]) {
-          setNoteInputValue(data.teacherNotes[0].content);
+        if (merged.teacherNotes && merged.teacherNotes[0]) {
+          setNoteInputValue(merged.teacherNotes[0].content);
         }
         
         // Sync open lesson detail dynamically
         if (selectedExploreLesson) {
-          const fresh = data.lessons?.find((l: any) => l.id === selectedExploreLesson.id);
+          const fresh = merged.lessons?.find((l: any) => l.id === selectedExploreLesson.id);
           if (fresh) {
             setSelectedExploreLesson(fresh);
           }
@@ -1678,6 +1737,13 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         playSparkleSound();
+        if (data.teacherProfile) {
+          setAppState(prev => {
+            const updated = { ...prev, teacherProfile: data.teacherProfile };
+            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+            return updated;
+          });
+        }
         fetchState();
       }
     } catch (err) {
@@ -1930,6 +1996,13 @@ export default function App() {
       if (data.success) {
         setParentFeedbackInput("");
         playSparkleSound();
+        if (data.parentFeedback) {
+          setAppState(prev => {
+            const updated = { ...prev, parentFeedback: data.parentFeedback };
+            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+            return updated;
+          });
+        }
         fetchState();
         alert("✉️ Đã gửi tin nhắn phản hồi trực tiếp cho Giáo viên lớp học!");
       }
@@ -1959,11 +2032,66 @@ export default function App() {
           [feedbackId]: ""
         });
         playSparkleSound();
+        if (data.parentFeedback) {
+          setAppState(prev => {
+            const updated = { ...prev, parentFeedback: data.parentFeedback };
+            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+            return updated;
+          });
+        }
         fetchState();
         alert("✉️ Đã gửi phản hồi đến phụ huynh thành công!");
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  // Delete parent feedback
+  const handleDeleteFeedback = async (feedbackId: string) => {
+    playClickSound();
+    
+    // Add to deleted feedbacks set locally so it never gets merged back by state synchronization
+    try {
+      const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
+      if (!deletedList.includes(feedbackId)) {
+        deletedList.push(feedbackId);
+        localStorage.setItem("khoahoc4_deleted_feedbacks", JSON.stringify(deletedList));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Instantly filter parent feedback in present local state so the UI updates with zero delay
+    setAppState(prev => {
+      const filtered = (prev.parentFeedback || []).filter(fb => fb.id !== feedbackId);
+      const updated = { ...prev, parentFeedback: filtered };
+      localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+      return updated;
+    });
+
+    try {
+      const res = await fetch("/api/parent-feedback/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ feedbackId })
+      });
+      const data = await res.json();
+      if (data.success) {
+        playSparkleSound();
+        if (data.parentFeedback) {
+          const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
+          const filtered = data.parentFeedback.filter((fb: any) => fb && !deletedList.includes(fb.id));
+          setAppState(prev => {
+            const updated = { ...prev, parentFeedback: filtered };
+            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+            return updated;
+          });
+        }
+        fetchState();
+      }
+    } catch (err) {
+      console.error("Online delete request failed, falling back to instant local state suppression:", err);
     }
   };
 
@@ -1978,6 +2106,13 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
+        if (data.teacherProfile) {
+          setAppState(prev => {
+            const updated = { ...prev, teacherProfile: data.teacherProfile };
+            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
+            return updated;
+          });
+        }
         fetchState();
       }
     } catch (err) {
@@ -3980,7 +4115,17 @@ export default function App() {
                           <div key={fb.id} className="p-4 rounded-2xl bg-rose-50 border-2 border-rose-200 flex flex-col gap-2">
                             <div className="flex justify-between items-center text-xs">
                               <strong className="text-rose-955 font-black">{fb.parentName} ({fb.studentName})</strong>
-                              <span className="text-[9px] text-zinc-500 font-bold">{new Date(fb.timestamp).toLocaleDateString()}</span>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[9px] text-zinc-500 font-bold">{new Date(fb.timestamp).toLocaleDateString()}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFeedback(fb.id)}
+                                  className="w-5 h-5 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-600 flex items-center justify-center font-black text-xs cursor-pointer shadow-sm hover:scale-105 active:scale-95 transition-all"
+                                  title="Xóa tin nhắn"
+                                >
+                                  ×
+                                </button>
+                              </div>
                             </div>
                             <p className="text-xs font-semibold leading-relaxed text-zinc-800 italic">&ldquo;{fb.message}&rdquo;</p>
                             
@@ -5552,13 +5697,13 @@ export default function App() {
                             <p className="text-xs font-bold text-zinc-805 leading-relaxed">{fb.message}</p>
 
                             {/* Reply if teacher responded */}
-                            {fb.reply ? (
+                            {(fb.teacherReply || fb.reply) ? (
                               <div className="p-3 bg-rose-50/50 border border-rose-200/50 rounded-xl flex flex-col gap-1.5 mt-1.5">
                                 <span className="text-[10px] font-black text-rose-800 uppercase flex items-center gap-1.5">
                                   👩‍🏫 PHẢN HỒI TỪ GIÁO VIÊN {appState.teacherProfile?.name !== "admin" ? (appState.teacherProfile?.name || "").toUpperCase() : "CHỦ NHIỆM"}:
                                 </span>
                                 <p className="text-xs font-black text-rose-955 italic leading-relaxed pl-1">
-                                  &ldquo;{fb.reply}&rdquo;
+                                  &ldquo;{fb.teacherReply || fb.reply}&rdquo;
                                 </p>
                               </div>
                             ) : (
@@ -6262,7 +6407,7 @@ export default function App() {
       )}
 
       {/* Floating Chatbot Gấu Biết Tuốt */}
-      <GauChatbox />
+      <GauChatbox currentUser={currentUser} currentRole={currentRole} />
     </div>
   </div>
   );
