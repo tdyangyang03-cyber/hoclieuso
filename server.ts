@@ -775,8 +775,8 @@ KHÔNG BAO GIỜ LÀM:
 - Không giải thích khoa học một mạch dài dặc hay nói kiểu học thuật hàn lâm người lớn.`;
     }
 
-    // Format chat history
-    const contents: any[] = [];
+    // Format and clean chat history for Gemini API
+    let contents: any[] = [];
     if (history && Array.isArray(history)) {
       history.forEach((h: any) => {
         contents.push({
@@ -789,6 +789,44 @@ KHÔNG BAO GIỜ LÀM:
       role: "user",
       parts: [{ text: message }]
     });
+
+    // Clean contents: Gemini API requires that:
+    // 1. The first content must be from 'user'. If there are leading 'model' contents, remove them.
+    // 2. Roles must strictly alternate: user -> model -> user -> model.
+    // 3. No empty/duplicate roles in succession (e.g. user -> user or model -> model should be merged to prevent bad request).
+    
+    // Step 1: Remove leading 'model' messages
+    while (contents.length > 0 && contents[0].role !== "user") {
+      contents.shift();
+    }
+
+    // Step 2: Alternate correctly by merging successive same-role turns
+    const cleanContents: any[] = [];
+    contents.forEach((item) => {
+      if (cleanContents.length === 0) {
+        if (item.role === "user") {
+          cleanContents.push(item);
+        }
+      } else {
+        const lastItem = cleanContents[cleanContents.length - 1];
+        if (lastItem.role === item.role) {
+          // Merge successive text parts
+          lastItem.parts[0].text += "\n" + item.parts[0].text;
+        } else {
+          cleanContents.push(item);
+        }
+      }
+    });
+    
+    contents = cleanContents;
+
+    // Elegant fallback if no valid contents remain
+    if (contents.length === 0) {
+      contents.push({
+        role: "user",
+        parts: [{ text: message }]
+      });
+    }
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
@@ -804,9 +842,12 @@ KHÔNG BAO GIỜ LÀM:
     
   } catch (err: any) {
     console.error("Gemini API Error:", err);
+    let errorMessage = err?.message || String(err);
+    // Secure masking: ensure no active API keys are ever leaked in error strings
+    errorMessage = errorMessage.replace(/AIzaSy[a-zA-Z0-9_\-]{33}/g, "AIzaSy[MASKED]");
     res.status(500).json({ 
       error: "Gấu đang bận một chút rồi, mình hỏi lại sau nhé!", 
-      details: err?.message || String(err) 
+      details: errorMessage
     });
   }
 });
