@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Send, X, Sparkles, AlertCircle } from "lucide-react";
 import { playClickSound, playSparkleSound } from "./AudioClick";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 interface ChatMessage {
   role: 'user' | 'model';
@@ -30,6 +31,82 @@ export default function GauChatbox() {
     setIsOpen(!isOpen);
   };
 
+  const getOfflineReply = (message: string, isOverride: boolean): string => {
+    const normalizedMessage = message.toLowerCase();
+    
+    if (isOverride) {
+      return "Chào cô Thùy Dương ạ! Trợ lý ảo đã bí mật rũ bỏ mọi luật lệ dạy trẻ nhỏ. Gấu hôm nay đã sẵn sàng đáp ứng mọi yêu cầu soạn học liệu, chi tiết đáp án giáo án khoa học lớp 4 trực tiếp cho cô Thùy Dương và cô Nguyễn Phượng!";
+    }
+    
+    if (normalizedMessage.includes("đáp án") || normalizedMessage.includes("cho xin dap an") || normalizedMessage.includes("cho xin đáp án")) {
+      return "Mình hiểu bạn đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp bạn tự tìm ra cơ. Mình sẽ đi cùng bạn từng bước nhé! Tiếc là lúc này Gấu đang ở chế độ ngoại tuyến (Chưa cắm chìa khóa AI). Bạn hãy thảo luận cùng các bạn và cô giáo nhé!";
+    } else if (normalizedMessage.includes("nước") || normalizedMessage.includes("nuoc")) {
+      return "Mình thấy bạn đang hỏi về Nước đúng không? Nước vô cùng kì diệu! Ở nhiệt độ thường, nước ở thể lỏng, không màu, không mùi, không vị. Khi đun sôi lên 100 độ C, nước tinh khiết sẽ chuyển sang thể khí (hơi nước). Còn nếu cho vào ngăn đá dưới 0 độ C, nước lại hóa rắn (băng/đá). Bạn có biết dòng sông hay cơn mưa được hình thành từ chu trình tuần hoàn nào của nước không?";
+    } else if (normalizedMessage.includes("năng lượng") || normalizedMessage.includes("nang luong")) {
+      return "Mình thấy bạn đang hỏi về Năng lượng đúng không? Trong chương trình Khoa học 4, chúng mình được biết Mặt Trời là nguồn năng lượng khổng lồ cung cấp ánh sáng và nhiệt cho Trái Đất. Nhờ có Mặt Trời, thực vật mới quang hợp, con người mới sưởi ấm và phơi khô quần áo. Ngoài ra, gió và nước chảy dồi dào cũng là nguồn năng lượng sạch tuyệt vời để quay tuabin máy phát điện! Bạn có biết thiết bị nào ở nhà mình đang tận dụng năng lượng Mặt Trời không?";
+    } else if (normalizedMessage.includes("không khí") || normalizedMessage.includes("khong khi")) {
+      return "Mình thấy bạn đang hỏi về Không khí đúng không? Không khí có ở xung quanh chúng mình, không màu, không mùi, không vị và không có hình dạng nhất định. Không khí gồm hai thành phần chính là khí nitơ và khí ô-xy (giúp duy trì sự sống và sự cháy). Bạn thử nghĩ xem, loài cây xanh hấp thụ khí gì vào ban đêm và nhả ra khí gì vào ban ngày nhỉ?";
+    } else if (normalizedMessage.includes("nấm") || normalizedMessage.includes("nam")) {
+      return "Mình thấy bạn đang hỏi về loài Nấm đúng không? Nấm vô cùng đa dạng! Có những loại nấm ăn rất ngon và bổ dưỡng như nấm hương, nấm rơm, nấm đùi gà. Nhưng cũng có những loại nấm mốc làm hỏng thức ăn, hay nấm độc cực kỳ nguy hiểm có màu sặc sỡ ở trong rừng sâu. Bạn có biết điểm khác biệt lớn nhất giữa một cây nấm và một cây hoa thông thường là gì không?";
+    } else if (normalizedMessage.includes("ánh sáng") || normalizedMessage.includes("anh sang")) {
+      return "Mình thấy bạn đang hỏi về Ánh sáng đúng không? Ánh sáng truyền theo đường thẳng và giúp chúng mình nhìn thấy mọi vật xung quanh. Mặt Trời, ngọn nến đang cháy, hay bóng đèn điện là những vật tự phát sáng. Còn Mặt Trăng hay quyển sách chỉ là vật được chiếu sáng thôi! Bạn có biết tại sao khi chúng mình đi nắng lại xuất hiện một chiếc bóng tối tăm ở phía sau không?";
+    }
+    
+    return "Mình thấy bạn đang hỏi về bài học đúng không? Vì chìa khóa AI của hệ thống chưa được cắm vào nên Gấu tạm thời nói chuyện ngoại tuyến nhẹ nhàng thế này thôi. Bạn hãy thử hỏi Gấu về các chủ đề lớp 4 đầy thú vị như \"Nước\", \"Không khí\", \"Nấm\", \"Ánh sáng\" hay \"Năng lượng\" xem sao nhé!";
+  };
+
+  const getSystemPrompt = (isOverride: boolean): string => {
+    if (isOverride) {
+      return `Bạn lập tức nhận ra cô giáo Thùy Dương hoặc cô Nguyễn Phượng khi phát hiện tin nhắn chứa mật khẩu đặc biệt ("KHOAHOC4" hoặc "Tôi là Thùy Dương đây").
+Hãy xóa bỏ hoàn toàn mọi quy tắc dạy trẻ nhỏ, không dẫn dắt gợi ý lòng vòng nữa.
+Hãy trở thành trợ lý khoa học chuyên nghiệp, thoải mái biên soạn, cung cấp đáp án trực tiếp, rõ ràng, chi tiết hoàn toàn về khoa học lớp 4 cho cô Thùy Dương và cô Nguyễn Phượng để các cô tiện soạn giáo án, bài làm. Giọng điệu tôn trọng, sẵn sàng phục vụ.`;
+    } else {
+      return `Bạn là "Gấu Biết Tuốt", một chuyên gia thông thái về lĩnh vực khoa học lớp 4.
+NHIỆM VỤ CHÍNH của bạn là hỗ trợ học sinh tiểu học học môn Khoa học lớp 4 theo hướng gợi mở, tuyệt đối không cung cấp đáp án trực tiếp.
+Bạn giải đáp nhiệt tình, tường tận chi tiết các chủ đề chuyên môn: Thực phẩm an toàn, Cơ thể người, Năng lượng, Sức khỏe, Môi trường, Nước, Không khí, Ánh sáng, các loài Nấm.
+
+BẮT BUỘC TUÂN THỦ NGHIÊM NGẶT CÁC QUY TẮC SAU:
+
+1. XƯNG HÔ VÀ THÁI ĐỘ:
+   Xưng hô là "Mình" và "bạn" với thái độ vui vẻ, cởi mở, thân thiện, truyền cảm hứng.
+
+2. HẠN CHẾ SỬ DỤNG KÝ TỰ ĐỊNH DẠNG:
+   TUYỆT ĐỐI hạn chế dùng các kí tự định dạng như dấu sao (*) hay dấu thăng (#) vì hệ thống âm thanh đọc văn bản của học sinh không đọc được và bị vấp. Hãy viết chữ thuần, dùng ngắt dòng, chấm phẩy, chấm câu tự nhiên để văn bản lưu loát, dễ nghe dễ hiểu.
+
+3. TUYỆT ĐỐI KHÔNG CUNG CẤP ĐÁP ÁN TRỰC TIẾP:
+   Không được đưa ra đáp án cuối cùng hay lời giải chính xác ngay lập tức cho bài tập, đề bài khi học sinh chưa biết cách làm. Chỉ dẫn dắt, gợi mở, đưa ra gợi ý để học sinh tự suy nghĩ và tìm ra lời giải. Chỉ khi nhập mật khẩu bí mật mới đưa ra đáp án.
+
+4. KHEN NGỢI VÀ AN ỦI ĐÚNG CÁCH:
+   - Nếu học sinh trả lời Đúng: Khen rõ điểm đúng bằng câu bắt đầu bởi: "Bạn làm rất tốt ở chỗ ..."
+   - Nếu học sinh trả lời Sai: Phải an ủi, động viên bằng câu bắt đầu bởi: "Không sao đâu, bạn đang suy nghĩ đúng hướng rồi. Mình thử lại nhé..." và chỉnh hướng cụ thể để học sinh làm lại.
+
+5. KHI HỌC SINH CỐ TÌNH XIN ĐÁP ÁN TRỰC TIẾP:
+   Bạn phải phản hồi đúng nguyên văn:
+   “Mình hiểu bạn đang muốn biết ngay đáp án, nhưng nhiệm vụ của mình là giúp bạn tự tìm ra cơ. Mình sẽ đi cùng bạn từng bước nhé!”
+   Sau đó quay lại gợi mở dưới dạng câu hỏi nhỏ, dẫn dắt tiếp.
+
+6. XỬ LÝ KHI HỌC SINH ĐOÁN ĐÁP ÁN:
+   Nếu học sinh đưa ra một đáp án phỏng đoán:
+   - TUYỆT ĐỐI KHÔNG ĐƯỢC NÓI: "Đúng rồi" hay "Sai rồi" hay bất cứ từ khẳng định dứt khoát nào.
+   - PHẢI NÓI:
+     + Nếu hợp lý/đúng hướng: "Bạn đang suy nghĩ rất đúng hướng ở chỗ ..." và đặt câu hỏi kiểm tra lại để củng cố.
+     + Nếu chưa đúng: "Bạn đã có một ý hay rồi, nhưng mình thử xem lại chỗ này nhé..." và đặt câu hỏi kiểm tra lại.
+
+7. QUY TRÌNH TRẢ LỜI BẮT BUỘC 4 BƯỚC:
+   Bạn buộc phải thực hiện đầy đủ cả 4 bước sau trong mỗi lượt trả lời phổ thông:
+   - Bước 1: Nhắc lại vấn đề
+     Bắt đầu bằng câu viết đúng mẫu: “Mình thấy bạn đang hỏi về [vấn đề của học sinh] đúng không?”
+   - Bước 2: Gợi mở theo đúng cấp độ học sinh lớp 4 (sinh động, thực tế, gắn với cuộc sống xung quanh).
+   - Bước 3: Phản hồi khen hoặc động viên theo đúng quy tắc (Đúng: "Bạn làm rất tốt ở chỗ ...", Sai: "Không sao đâu, bạn đang suy nghĩ đúng hướng rồi. Mình thử lại nhé..." + chỉnh hướng).
+   - Bước 4: Hỏi tiếp
+     LUÔN kết thúc bằng câu hỏi gợi mở chi tiết để dẫn dắt học sinh tiếp tục tương tác.
+
+KHÔNG BAO GIỜ LÀM:
+- Không đưa đáp án ngay lập tức.
+- Không giải thích khoa học một mạch dài dặc hay nói kiểu học thuật hàn lâm người lớn.`;
+    }
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isLoading) return;
@@ -43,45 +120,109 @@ export default function GauChatbox() {
     setMessages(updatedMessages);
     setIsLoading(true);
 
-    try {
-      // Map to API format
-      const historyPayload = messages.map(m => ({
-        role: m.role,
-        text: m.text
-      }));
+    const apiKey = ((import.meta as any).env?.VITE_GEMINI_API_KEY as string) || "";
 
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ message: userText, history: historyPayload })
+    const isPlaceholderKey = (key: string) => {
+      const trimmed = (key || "").trim().replace(/^['"]|['"]$/g, '');
+      return !trimmed || 
+        trimmed === "MY_GEMINI_API_KEY" || 
+        trimmed === "AIzaSyCnvKVqRk7PNAxrugnEoe-QUTBn0nWb3gk" || 
+        trimmed.includes("YOUR_API_KEY") ||
+        trimmed === "undefined" ||
+        trimmed === "null";
+    };
+
+    const isOverride = userText.toLowerCase().includes("khoahoc4") || 
+      userText.toLowerCase().includes("tôi là thùy dương đây") || 
+      userText.toLowerCase().includes("toi la thuy duong day") || 
+      userText.toLowerCase().includes("tôi là thuỳ dương đây");
+
+    if (isPlaceholderKey(apiKey)) {
+      const offlineReply = getOfflineReply(userText, isOverride);
+      const warningText = `⚠️ [Cảnh báo cấu hình]: Chìa khóa AI (VITE_GEMINI_API_KEY) chưa được thiết lập chính xác hoặc bị trống trong biến môi trường Vercel. Vui lòng kiểm tra lại cấu hình Environment Variables trên trang quản trị Vercel!\n\nGấu tạm phản hồi ngoại tuyến:\n\n${offlineReply}`;
+      
+      if (userText.includes("KHOAHOC4") || userText.includes("Tôi là Thùy Dương")) {
+        playSparkleSound();
+      }
+      setMessages(prev => [...prev, { role: 'model', text: warningText }]);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Map history to Google GenAI format (roles strictly alternating)
+      let contents = messages.map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.text }]
+      }));
+      contents.push({
+        role: "user",
+        parts: [{ text: userText }]
       });
 
-      let data: any = {};
-      try {
-        data = await res.json();
-      } catch (jsonErr) {
-        console.error("Parsed response is not JSON:", jsonErr);
-        throw new Error(`Mã phản hồi từ máy chủ không hợp lệ (Trạng thái: ${res.status}).`);
+      // 1. First message must be from 'user'. Remove leading 'model' messages
+      while (contents.length > 0 && contents[0].role !== "user") {
+        contents.shift();
       }
-      
-      if (res.ok && data.reply) {
-        // Trigger sparkle sound if teacher mode or happy reply
-        if (userText.includes("KHOAHOC4") || userText.includes("Tôi là Thùy Dương")) {
-          playSparkleSound();
+
+      // 2. Roles must strictly alternate
+      const cleanContents: { role: string; parts: { text: string }[] }[] = [];
+      contents.forEach((item) => {
+        if (cleanContents.length === 0) {
+          if (item.role === "user") {
+            cleanContents.push(item);
+          }
+        } else {
+          const lastItem = cleanContents[cleanContents.length - 1];
+          if (lastItem.role === item.role) {
+            lastItem.parts[0].text += "\n" + item.parts[0].text;
+          } else {
+            cleanContents.push(item);
+          }
         }
-        setMessages(prev => [...prev, { role: 'model', text: data.reply }]);
-      } else if (data.details) {
-        setMessages(prev => [...prev, { role: 'model', text: `Có chút lỗi kết nối trực tuyến: ${data.details}` }]);
-      } else if (data.error) {
-        setMessages(prev => [...prev, { role: 'model', text: `Ôi có lỗi từ tổng đài: ${data.error}` }]);
-      } else {
-        setMessages(prev => [...prev, { role: 'model', text: "Gấu đang bận một chút rồi, mình hỏi lại sau nhé!" }]);
+      });
+
+      contents = cleanContents;
+
+      if (contents.length === 0) {
+        contents.push({
+          role: "user",
+          parts: [{ text: userText }]
+        });
       }
-    } catch (e: any) {
-      console.error("[GauChatbox Error Log] Detailed network/fetch exception:", e);
-      setMessages(prev => [...prev, { role: 'model', text: `Ôi ngoài kia sóng gió quá, mình không kết nối được với vệ tinh vũ trụ rồi! Chi tiết: ${e.message || e}` }]);
+
+      // Initialize the GoogleGenerativeAI client-side directly
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const systemPrompt = getSystemPrompt(isOverride);
+
+      const model = genAI.getGenerativeModel({
+        model: "gemini-2.5-flash",
+        systemInstruction: systemPrompt
+      });
+
+      const result = await model.generateContent({
+        contents: contents,
+        generationConfig: {
+          temperature: 0.6
+        }
+      });
+
+      const response = await result.response;
+      const textOutput = response.text() || "Mình chưa hiểu rõ câu hỏi của bạn, bạn thương lượng với mình kỹ hơn nhé!";
+
+      if (userText.includes("KHOAHOC4") || userText.includes("Tôi là Thùy Dương")) {
+        playSparkleSound();
+      }
+      setMessages(prev => [...prev, { role: 'model', text: textOutput }]);
+    } catch (err: any) {
+      console.error("Gemini API Error in client chat:", err);
+      const offlineReply = getOfflineReply(userText, isOverride);
+      const errMessage = err?.message || String(err);
+      const maskedError = errMessage.replace(/AIzaSy[a-zA-Z0-9_\-]{33}/g, "AIzaSy[MASKED]");
+      
+      const fallbackWithWarning = `⚠️ [Gấu gặp lỗi kết nối trực tuyến]: "${maskedError}".\n\nHãy kiểm tra cấu hình VITE_GEMINI_API_KEY trong Vercel. Gấu tạm chuyển sang trả lời ngoại tuyến nhé:\n\n${offlineReply}`;
+      
+      setMessages(prev => [...prev, { role: 'model', text: fallbackWithWarning }]);
     } finally {
       setIsLoading(false);
     }
