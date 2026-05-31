@@ -58,21 +58,30 @@ export default function GauChatbox() {
         body: JSON.stringify({ message: userText, history: historyPayload })
       });
 
-      const data = await res.json();
+      let data: any = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        console.error("Parsed response is not JSON:", jsonErr);
+        throw new Error(`Mã phản hồi từ máy chủ không hợp lệ (Trạng thái: ${res.status}).`);
+      }
       
-      if (data.reply) {
+      if (res.ok && data.reply) {
         // Trigger sparkle sound if teacher mode or happy reply
         if (userText.includes("KHOAHOC4") || userText.includes("Tôi là Thùy Dương")) {
           playSparkleSound();
         }
         setMessages(prev => [...prev, { role: 'model', text: data.reply }]);
       } else if (data.details) {
-        setMessages(prev => [...prev, { role: 'model', text: `Ôi có lỗi từ tổng đài vũ trụ: ${data.details}` }]);
+        setMessages(prev => [...prev, { role: 'model', text: `Có chút lỗi kết nối trực tuyến: ${data.details}` }]);
+      } else if (data.error) {
+        setMessages(prev => [...prev, { role: 'model', text: `Ôi có lỗi từ tổng đài: ${data.error}` }]);
       } else {
         setMessages(prev => [...prev, { role: 'model', text: "Gấu đang bận một chút rồi, mình hỏi lại sau nhé!" }]);
       }
-    } catch (e) {
-      setMessages(prev => [...prev, { role: 'model', text: "Ôi ngoài kia sóng gió quá, mình không kết nối được với vệ tinh vũ trụ rồi!" }]);
+    } catch (e: any) {
+      console.error("[GauChatbox Error Log] Detailed network/fetch exception:", e);
+      setMessages(prev => [...prev, { role: 'model', text: `Ôi ngoài kia sóng gió quá, mình không kết nối được với vệ tinh vũ trụ rồi! Chi tiết: ${e.message || e}` }]);
     } finally {
       setIsLoading(false);
     }
