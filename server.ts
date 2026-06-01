@@ -14,6 +14,30 @@ class GoogleGenAI extends GoogleGenerativeAI {
   }
 }
 
+const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+async function generateContentWithRetry(model: any, requestBody: any, retries = 3, delayMs = 2000): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await model.generateContent(requestBody);
+      return result;
+    } catch (error: any) {
+      const status = error?.status || error?.statusCode;
+      const errorMsg = String(error?.message || error).toLowerCase();
+      const is503 = status === 503 || errorMsg.includes("503") || errorMsg.includes("overloaded") || errorMsg.includes("overload");
+      const is429 = status === 429 || errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("exhausted");
+
+      if ((is503 || is429) && i < retries - 1) {
+        console.warn(`Gemini bị quá tải/quá giới hạn (${status || 'API Error'}). Đang thử lại lần ${i + 1}/${retries} sau ${delayMs}ms...`);
+        await delay(delayMs);
+        delayMs *= 2; // Exponential backoff
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
 const app = express();
 const PORT = 3000;
 
@@ -1033,8 +1057,8 @@ KHÔNG BAO GIỜ LÀM:
       systemInstruction: systemPrompt
     });
 
-    // Call generateContent exactly following the requested SDK pattern
-    const result = await model.generateContent({
+    // Call generateContent exactly following the requested SDK pattern with secure exponential retries
+    const result = await generateContentWithRetry(model, {
       contents: contents,
       generationConfig: {
         temperature: 0.6
