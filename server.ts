@@ -31,28 +31,22 @@ let state = {
       comments: [],
       materials: [
         {
-          id: "M1",
-          title: "Video bài giảng: Sự chuyển thể của Nước",
+          id: "M_l1_m1",
+          title: "Vòng tuần hoàn kì diệu của nước 💧 (Khoa Học Lớp 4)",
           type: "video",
-          url: "https://www.youtube.com/embed/3gscG70jK10",
-          description: "Xem các thí nghiệm sinh động về nước lỏng sôi biến thành hơi, hơi ngưng tụ, nước đóng băng.",
-          section: "Video bài giảng 📹"
+          url: "https://www.youtube.com/watch?v=EX290H6qf6k",
+          description: "Video thú vị cùng chú khỉ đất sét khám phá 3 trạng thái của Nước: rắn, lỏng, khí và cách mây mưa hình thành nhen!",
+          section: "Video bài giảng 📹",
+          createdAt: new Date().toISOString()
         },
         {
-          id: "M2",
-          title: "Tóm tắt: Sơ đồ chu trình tuần hoàn của nước",
-          type: "pdf",
-          url: "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=800&auto=format&fit=crop&q=60",
-          description: "Hình ảnh và sơ đồ minh họa súc tích cho bài học.",
-          section: "Tài liệu đọc & Quan sát 📄"
-        },
-        {
-          id: "M3",
-          title: "Trò chơi câu đố: Các thể của nước",
-          type: "game",
-          url: "https://wordwall.net/embed/7915509",
-          description: "Trả lời thật nhanh các câu hỏi trắc nghiệm tính chất nước nhé!",
-          section: "Vui chơi tương tác 🎮"
+          id: "M_l1_m2",
+          title: "Mẫu sáp màu & Thí nghiệm đông đặc của nước đá 🧪",
+          type: "experiment",
+          url: "https://images.unsplash.com/photo-1548802673-380ab8ebc7b7?w=1000",
+          description: "Quan sát trạng thái khay đá khi nước hạ nhiệt độ xuống dưới 0 độ C để hiểu rõ sự đông đặc lỏng thành rắn.",
+          section: "Thí nghiệm trực quan 🧪",
+          createdAt: new Date().toISOString()
         }
       ]
     },
@@ -65,20 +59,22 @@ let state = {
       comments: [],
       materials: [
         {
-          id: "M4",
-          title: "Video Thí nghiệm: Ánh sáng truyền theo đường thẳng",
+          id: "M_l2_m1",
+          title: "Thí nghiệm ánh sáng truyền thẳng qua khe giấy ⚡",
           type: "video",
-          url: "https://www.youtube.com/embed/fAWh_O4Iqas",
-          description: "Chứng minh ánh sáng đi thẳng qua ba màng chắn thẳng hàng.",
-          section: "Xem thí nghiệm 🧪"
+          url: "https://www.youtube.com/watch?v=fD1540_U66I",
+          description: "Thí nghiệm thực hành giúp con chứng minh ánh sáng đi theo đường thẳng cực kỳ dễ hiểu nhen!",
+          section: "Video bài giảng 📹",
+          createdAt: new Date().toISOString()
         },
         {
-          id: "M5",
-          title: "Thử thách ghép cặp: Vật tự phát sáng",
-          type: "game",
-          url: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=1200&auto=format&fit=crop&q=80",
-          description: "Phân biệt Mặt Trời, Đom Đóm, Đèn pin với Mặt Trăng, Gương phẳng...",
-          section: "Trò chơi ô chữ 🎮"
+          id: "M_l2_m2",
+          title: "Phiếu quan sát nguồn phát sáng tự nhiên & nhân tạo 📖",
+          type: "worksheet",
+          url: "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000",
+          description: "Hãy điền các nguồn sáng con gặp trong gia đình (mặt trời, bóng đèn, đom đóm) vào phiếu bài lập tức nhen con!",
+          section: "Phiếu học tập 📄",
+          createdAt: new Date().toISOString()
         }
       ]
     }
@@ -152,7 +148,11 @@ let state = {
   attendanceDays: [
     "Ngày 1", "Ngày 2", "Ngày 3", "Ngày 4", "Ngày 5",
     "Ngày 6", "Ngày 7", "Ngày 8", "Ngày 9", "Ngày 10"
-  ] as string[]
+  ] as string[],
+  activeLessonId: null as string | null,
+  activeFolder: null as string | null,
+  activeMaterialId: null as string | null,
+  activeSubTab: null as string | null
 };
 
 // --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL & CONTAINERS ---
@@ -287,6 +287,15 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
 // REST APIs
 app.get("/api/state", (req, res) => {
   res.json(state);
+});
+
+app.post("/api/active-session", (req, res) => {
+  const { activeLessonId, activeFolder, activeMaterialId, activeSubTab } = req.body;
+  state.activeLessonId = activeLessonId !== undefined ? activeLessonId : state.activeLessonId;
+  state.activeFolder = activeFolder !== undefined ? activeFolder : state.activeFolder;
+  state.activeMaterialId = activeMaterialId !== undefined ? activeMaterialId : state.activeMaterialId;
+  state.activeSubTab = activeSubTab !== undefined ? activeSubTab : state.activeSubTab;
+  res.json({ success: true, state });
 });
 
 app.post("/api/state/restore", (req, res) => {

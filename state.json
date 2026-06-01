@@ -1,0 +1,247 @@
+{
+  "lessons": [
+    {
+      "id": "L1",
+      "categoryIndex": 1,
+      "title": "Bài 1: Nước kì diệu có những trạng thái nào? 💧",
+      "description": "Học sinh khám phá các trạng thái tự nhiên của nước: Lỏng, khí, rắn và quá trình chuyển thể kỳ diệu.",
+      "createdAt": "2026-06-01T14:18:53.858Z",
+      "comments": [],
+      "materials": [
+        {
+          "id": "M_l1_m1",
+          "title": "Vòng tuần hoàn kì diệu của nước 💧 (Khoa Học Lớp 4)",
+          "type": "video",
+          "url": "https://www.youtube.com/watch?v=EX290H6qf6k",
+          "description": "Video thú vị cùng chú khỉ đất sét khám phá 3 trạng thái của Nước: rắn, lỏng, khí và cách mây mưa hình thành nhen!",
+          "section": "Video bài giảng 📹",
+          "createdAt": "2026-06-01T15:47:00.000Z"
+        },
+        {
+          "id": "M_l1_m2",
+          "title": "Mẫu sáp màu & Thí nghiệm đông đặc của nước đá 🧪",
+          "type": "experiment",
+          "url": "https://images.unsplash.com/photo-1548802673-380ab8ebc7b7?w=1000",
+          "description": "Quan sát trạng thái khay đá khi nước hạ nhiệt độ xuống dưới 0 độ C để hiểu rõ sự đông đặc lỏng thành rắn.",
+          "section": "Thí nghiệm trực quan 🧪",
+          "createdAt": "2026-06-01T15:47:10.000Z"
+        }
+      ]
+    },
+    {
+      "id": "L2",
+      "categoryIndex": 2,
+      "title": "Bài 2: Nguồn sáng & Sự truyền ánh sáng như thế nào? ⚡",
+      "description": "Cơ thể ta nhìn thấy vật bởi ánh sáng từ nguồn truyền tới mắt. Nhưng truyền như thế nào?",
+      "createdAt": "2026-06-01T14:18:53.858Z",
+      "comments": [],
+      "materials": [
+        {
+          "id": "M_l2_m1",
+          "title": "Thí nghiệm ánh sáng truyền thẳng qua khe giấy ⚡",
+          "type": "video",
+          "url": "https://www.youtube.com/watch?v=fD1540_U66I",
+          "description": "Thí nghiệm thực hành giúp con chứng minh ánh sáng đi theo đường thẳng cực kỳ dễ hiểu nhen!",
+          "section": "Video bài giảng 📹",
+          "createdAt": "2026-06-01T15:47:20.000Z"
+        },
+        {
+          "id": "M_l2_m2",
+          "title": "Phiếu quan sát nguồn phát sáng tự nhiên & nhân tạo 📖",
+          "type": "worksheet",
+          "url": "https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=1000",
+          "description": "Hãy điền các nguồn sáng con gặp trong gia đình (mặt trời, bóng đèn, đom đóm) vào phiếu bài lập tức nhen con!",
+          "section": "Phiếu học tập 📄",
+          "createdAt": "2026-06-01T15:47:30.000Z"
+        }
+      ]
+    },
+    {
+      "id": "L_1780324018228",
+      "categoryIndex": 4,
+      "title": "BÀI 19: ĐẶC ĐIỂM CHUNG CỦA NẤM",
+      "type": "video",
+      "url": "",
+      "description": "",
+      "createdAt": "2026-06-01T14:26:58.228Z",
+      "comments": [],
+      "materials": [
+        {
+          "id": "M_1780327924112",
+          "title": "nna",
+          "type": "video",
+          "url": "https://ibb.co/hxs2DT44",
+          "description": "",
+          "section": "IN",
+          "createdAt": "2026-06-01T15:32:04.112Z"
+        }
+      ]
+    }
+  ],
+  "students": [
+    {
+      "id": "HS01",
+      "name": "Nguyễn Gia Bảo",
+      "isPresent": true,
+      "checkinTime": "2026-06-01T14:18:53.858Z",
+      "badges": [
+        "Chuyên Cần Tinh Anh 📅"
+      ],
+      "attendedDays": [
+        "Ngày 1",
+        "Ngày 2"
+      ]
+    },
+    {
+      "id": "HS02",
+      "name": "Trần Minh Thư",
+      "isPresent": false,
+      "checkinTime": null,
+      "badges": [],
+      "attendedDays": []
+    },
+    {
+      "id": "HS03",
+      "name": "thùy dương",
+      "isPresent": false,
+      "checkinTime": null,
+      "badges": [],
+      "attendedDays": []
+    },
+    {
+      "id": "HS04",
+      "name": "thuy dương",
+      "isPresent": false,
+      "checkinTime": null,
+      "badges": [],
+      "attendedDays": []
+    },
+    {
+      "id": "HS05",
+      "name": "thuy",
+      "isPresent": false,
+      "checkinTime": null,
+      "badges": [],
+      "attendedDays": []
+    }
+  ],
+  "teacherNotes": [
+    {
+      "id": "n1",
+      "content": "Lớp 4 rèn luyện rất chăm chỉ. Hôm nay Gia Bảo phát biểu bài rất to và rõ ràng.",
+      "createdAt": "2026-06-01T14:18:53.858Z"
+    }
+  ],
+  "lessonPlans": [
+    {
+      "id": "p1",
+      "title": "KHBD: Bài 1 - Tính chất và vai trò của nước",
+      "content": "Mục tiêu: Học sinh nhận biết được nước không màu, không mùi, không vị, hòa tan một số chất và chảy từ cao xuống thấp.",
+      "type": "kh-bai-day",
+      "link": ""
+    }
+  ],
+  "scheduleEvents": [
+    {
+      "id": "e1",
+      "title": "Thực hành vẽ Sơ đồ tư duy Nước trên bảng phụ",
+      "date": "2026-06-01",
+      "time": "09:00"
+    }
+  ],
+  "studySheets": [
+    {
+      "id": "ws1",
+      "title": "Mẫu Phiếu Học Tập Khám Phá Tính Chất Của Nước",
+      "imageUrl": "https://images.unsplash.com/photo-1527061011665-3652c757a4d4?w=800&auto=format&fit=crop&q=60",
+      "createdAt": "2026-06-01T14:18:53.858Z"
+    }
+  ],
+  "workbookSubmissions": [],
+  "mindmapSubmissions": [],
+  "gradesAndComments": [
+    {
+      "id": "g_HS01",
+      "studentId": "HS01",
+      "studentName": "Nguyễn Gia Bảo",
+      "attendanceScore": "Xuất sắc",
+      "midTermScore": 10,
+      "finalScore": 10,
+      "weeklyComment": "Con rất ngoan, hoàn thành xuất sắc thử thách vẽ sơ đồ nước.",
+      "lastUpdated": "2026-06-01T14:18:53.858Z"
+    },
+    {
+      "id": "g_HS02",
+      "studentId": "HS02",
+      "studentName": "Trần Minh Thư",
+      "attendanceScore": "Vắng mặt",
+      "midTermScore": 9,
+      "finalScore": 10,
+      "weeklyComment": "Con cần ôn tập thêm phiếu học tập tuần.",
+      "lastUpdated": "2026-06-01T14:18:53.858Z"
+    },
+    {
+      "id": "g_HS03",
+      "studentId": "HS03",
+      "studentName": "thùy dương",
+      "attendanceScore": "Tốt",
+      "midTermScore": 10,
+      "finalScore": 10,
+      "weeklyComment": "Chưa có nhận xét.",
+      "lastUpdated": "2026-06-01T14:34:43.482Z"
+    },
+    {
+      "id": "g_HS04",
+      "studentId": "HS04",
+      "studentName": "thuy dương",
+      "attendanceScore": "Tốt",
+      "midTermScore": 10,
+      "finalScore": 10,
+      "weeklyComment": "Chưa có nhận xét.",
+      "lastUpdated": "2026-06-01T15:37:02.061Z"
+    },
+    {
+      "id": "g_HS05",
+      "studentId": "HS05",
+      "studentName": "thuy",
+      "attendanceScore": "Tốt",
+      "midTermScore": 10,
+      "finalScore": 10,
+      "weeklyComment": "Chưa có nhận xét.",
+      "lastUpdated": "2026-06-01T15:46:39.262Z"
+    }
+  ],
+  "parentFeedback": [],
+  "discussionThreads": [
+    {
+      "id": "t1",
+      "title": "Thảo luận: Tại sao nước chảy từ trên cao xuống? 🤔",
+      "content": "Hãy cùng suy nghĩ xem trong cuộc sống, hiện tượng này giúp ích gì cho đời sống chúng mình nhé!",
+      "isOpen": true,
+      "comments": []
+    }
+  ],
+  "teacherProfile": {
+    "name": "admin",
+    "themeColor": "emerald",
+    "mode": "light",
+    "avatar": "👩‍🏫"
+  },
+  "attendanceDays": [
+    "Ngày 1",
+    "Ngày 2",
+    "Ngày 3",
+    "Ngày 4",
+    "Ngày 5",
+    "Ngày 6",
+    "Ngày 7",
+    "Ngày 8",
+    "Ngày 9",
+    "Ngày 10",
+    "Ngày 11"
+  ],
+  "activeLessonId": null,
+  "activeFolder": null,
+  "activeMaterialId": null,
+  "activeSubTab": null
+}

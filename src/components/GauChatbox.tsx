@@ -13,6 +13,11 @@ interface GauChatboxProps {
   currentRole?: 'login' | 'teacher' | 'student' | 'parent';
 }
 
+const cleanGauText = (text: string): string => {
+  if (!text) return "";
+  return text.replace(/\*/g, "").replace(/#/g, "");
+};
+
 export default function GauChatbox({ currentUser, currentRole }: GauChatboxProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -248,7 +253,7 @@ KHÔNG BAO GIỜ LÀM:
       if (userText.includes("KHOAHOC4") || userText.includes("Tôi là Thùy Dương")) {
         playSparkleSound();
       }
-      setMessages(prev => [...prev, { role: 'model', text: textOutput }]);
+      setMessages(prev => [...prev, { role: 'model', text: cleanGauText(textOutput) }]);
     } catch (err: any) {
       console.error("Gemini API Error in client chat:", err);
       const offlineReply = getOfflineReply(userText, isOverride);

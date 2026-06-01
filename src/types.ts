@@ -149,4 +149,8 @@ export interface AppState {
   discussionThreads: DiscussionThread[];
   teacherProfile: TeacherProfile;
   attendanceDays?: string[];
+  activeLessonId?: string | null;
+  activeFolder?: string | null;
+  activeMaterialId?: string | null;
+  activeSubTab?: string | null;
 }

@@ -378,8 +378,9 @@ export default function App() {
   const [teacherActiveTab, setTeacherActiveTab] = useState<'dashboard' | 'students' | 'lessons' | 'parentInfo' | 'notes' | 'profile'>('dashboard');
   const [teacherStudentActiveSubTab, setTeacherStudentActiveSubTab] = useState<'roster' | 'submissions'>('roster');
   const [materialActiveSubTab, setMaterialActiveSubTab] = useState<'lessons' | 'worksheets' | 'mindmaps' | 'discussions'>('lessons');
-  const [studentActiveTab, setStudentActiveTab] = useState<'attendance' | 'materials' | 'discussions' | 'feedback' | 'grades'>('attendance');
+  const [studentActiveTab, setStudentActiveTab] = useState<'attendance' | 'materials' | 'discussions' | 'feedback' | 'grades'>('materials');
   const [studentMaterialSubTab, setStudentMaterialSubTab] = useState<'lessons' | 'worksheets' | 'mindmapEdit'>('lessons');
+  const [isScreenSynced, setIsScreenSynced] = useState(true);
   const [teacherNotesActiveSubTab, setTeacherNotesActiveSubTab] = useState<'annual' | 'lesson_plan' | 'notes'>('annual');
   const [activeCategoryIndex, setActiveCategoryIndex] = useState<number | null>(null);
   const [expandedCategoryIndex, setExpandedCategoryIndex] = useState<number | null>(null);
@@ -454,6 +455,19 @@ export default function App() {
   const [newFolderInput, setNewFolderInput] = useState("");
 
   const [deletedFoldersMap, setDeletedFoldersMap] = useState<Record<string, string[]>>({});
+  const [customFoldersMap, setCustomFoldersMap] = useState<Record<string, string[]>>(() => {
+    try {
+      const stored = localStorage.getItem("khoahoc4_custom_folders");
+      return stored ? JSON.parse(stored) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("khoahoc4_custom_folders", JSON.stringify(customFoldersMap));
+  }, [customFoldersMap]);
+
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editingFolderValue, setEditingFolderValue] = useState("");
 
@@ -471,26 +485,23 @@ export default function App() {
         setActiveMaterial(null);
       }
 
+      const lessonId = selectedExploreLesson.id;
+
       // Compute lesson folders
       const foldersSet = new Set<string>();
-      foldersSet.add("🌈 Bài giảng & Đồ dùng dạy học chính khóa");
+      if (selectedExploreLesson.url) {
+        foldersSet.add("🌈 Bài giảng & Đồ dùng dạy học chính khóa");
+      }
       
       // Existing material sections
       mats.forEach(m => {
         if (m.section) foldersSet.add(m.section);
       });
-      
-      // Add default folders if they are missing
-      const defaults = [
-        "📹 Video bài giảng sinh động",
-        "🎮 Trò chơi ôn tập ôn luyện",
-        "🧪 Thí nghiệm ảo / Trực quan",
-        "📄 Bài đọc / File PDF",
-        "🧠 Sơ đồ tư duy bài giảng"
-      ];
-      defaults.forEach(d => foldersSet.add(d));
 
-      const lessonId = selectedExploreLesson.id;
+      // Add custom created folders
+      const customForThis = customFoldersMap[lessonId] || [];
+      customForThis.forEach(f => foldersSet.add(f));
+
       const deletedForThis = deletedFoldersMap[lessonId] || [];
 
       const finalFolders = Array.from(foldersSet).filter(f => !deletedForThis.includes(f));
@@ -498,14 +509,14 @@ export default function App() {
       
       // Select the first folder as active folder by default if current activeFolder is not in the list
       if (!activeFolder || !finalFolders.includes(activeFolder)) {
-        setActiveFolder(finalFolders[0]);
+        setActiveFolder(finalFolders[0] || null);
       }
     } else {
       setActiveMaterial(null);
       setLessonFolders([]);
       setActiveFolder(null);
     }
-  }, [selectedExploreLesson, deletedFoldersMap]);
+  }, [selectedExploreLesson, deletedFoldersMap, customFoldersMap]);
 
   const [newLessonCommentContent, setNewLessonCommentContent] = useState("");
   const [newLessonCommentRating, setNewLessonCommentRating] = useState(5);
@@ -592,6 +603,33 @@ export default function App() {
   };
 
   // Real-time server sync polling
+  const activeLessonIdRef = React.useRef<string | null>(null);
+  const activeFolderRef = React.useRef<string | null>(null);
+  const activeMaterialIdRef = React.useRef<string | null>(null);
+  const currentRoleRef = React.useRef<string>("login");
+  const isScreenSyncedRef = React.useRef<boolean>(true);
+
+  React.useEffect(() => {
+    activeLessonIdRef.current = selectedExploreLesson?.id || null;
+  }, [selectedExploreLesson]);
+
+  React.useEffect(() => {
+    activeFolderRef.current = activeFolder;
+  }, [activeFolder]);
+
+  React.useEffect(() => {
+    activeMaterialIdRef.current = activeMaterial?.id || null;
+  }, [activeMaterial]);
+
+  React.useEffect(() => {
+    currentRoleRef.current = currentRole;
+  }, [currentRole]);
+
+  React.useEffect(() => {
+    isScreenSyncedRef.current = isScreenSynced;
+  }, [isScreenSynced]);
+
+  // Real-time server sync polling
   useEffect(() => {
     fetchState();
     const interval = setInterval(fetchState, 3000);
@@ -640,7 +678,8 @@ export default function App() {
                 (parsedLocal.mindmapSubmissions && parsedLocal.mindmapSubmissions.length > 0) ||
                 (parsedLocal.students && parsedLocal.students.length > 2);
 
-              if (isServerSeedState && clientHasCustomData) {
+              // ONLY allow 'teacher' to restore backup state to prevent students from overwriting DB with stale local backup
+              if (currentRoleRef.current === 'teacher' && isServerSeedState && clientHasCustomData) {
                 // Server restarted or state cleared: push client's backup state to restore online database
                 const resRestore = await fetch("/api/state/restore", {
                   method: "POST",
@@ -670,11 +709,47 @@ export default function App() {
           setNoteInputValue(merged.teacherNotes[0].content);
         }
         
-        // Sync open lesson detail dynamically
-        if (selectedExploreLesson) {
-          const fresh = merged.lessons?.find((l: any) => l.id === selectedExploreLesson.id);
-          if (fresh) {
-            setSelectedExploreLesson(fresh);
+        // Active presentation and routing synchronizer for students/parents based on teacher adjustments
+        const currentRoleVal = currentRoleRef.current;
+        const isScreenSyncedVal = isScreenSyncedRef.current;
+        
+        if (isScreenSyncedVal && (currentRoleVal === 'student' || currentRoleVal === 'parent')) {
+          if (merged.activeLessonId) {
+            const freshLesson = merged.lessons?.find((l: any) => l.id === merged.activeLessonId);
+            if (freshLesson) {
+              const currentSelLessonId = activeLessonIdRef.current;
+              if (!currentSelLessonId || currentSelLessonId !== merged.activeLessonId) {
+                setSelectedExploreLesson(freshLesson);
+              }
+              if (merged.activeFolder && activeFolderRef.current !== merged.activeFolder) {
+                setActiveFolder(merged.activeFolder);
+              }
+              if (merged.activeMaterialId) {
+                const freshMat = freshLesson.materials?.find((m: any) => m.id === merged.activeMaterialId);
+                if (freshMat && (!activeMaterialIdRef.current || activeMaterialIdRef.current !== merged.activeMaterialId)) {
+                  setActiveMaterial(freshMat);
+                }
+              }
+            }
+          } else {
+            if (activeLessonIdRef.current) {
+              setSelectedExploreLesson(null);
+              setActiveMaterial(null);
+            }
+          }
+
+          if (merged.activeSubTab) {
+            setStudentActiveTab("materials");
+            setStudentMaterialSubTab(merged.activeSubTab);
+          }
+        } else {
+          // Sync open lesson detail dynamically if working separately or manually
+          const currentSelLessonId = activeLessonIdRef.current;
+          if (currentSelLessonId) {
+            const fresh = merged.lessons?.find((l: any) => l.id === currentSelLessonId);
+            if (fresh) {
+              setSelectedExploreLesson(fresh);
+            }
           }
         }
       }
@@ -683,6 +758,27 @@ export default function App() {
       useOfflineFallback();
     }
   };
+
+  // Broadcast teacher adjustments (selected lesson, active folder, active material, active subtab) to server in real-time
+  useEffect(() => {
+    if (currentRole === 'teacher') {
+      let activeSubTab: string | null = null;
+      if (selectedExploreLesson) {
+        activeSubTab = 'lessons';
+      }
+      
+      fetch("/api/active-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          activeLessonId: selectedExploreLesson?.id || null,
+          activeFolder: activeFolder || null,
+          activeMaterialId: activeMaterial?.id || null,
+          activeSubTab: activeSubTab
+        })
+      }).catch(err => console.error("Session sync broadcast error:", err));
+    }
+  }, [currentRole, selectedExploreLesson?.id, activeFolder, activeMaterial?.id]);
 
   const handleRoleSelection = (role: typeof currentRole) => {
     playClickSound();
@@ -695,6 +791,14 @@ export default function App() {
       setTeacherPassword("");
       setParentName("");
       setClassCode("");
+    }
+  };
+
+  const handleStudentSelectLesson = (lesson: Lesson, mat: any = null) => {
+    setIsScreenSynced(false);
+    setSelectedExploreLesson(lesson);
+    if (mat) {
+      setActiveMaterial(mat);
     }
   };
 
@@ -1467,11 +1571,34 @@ export default function App() {
 
   const handleCreateFolder = () => {
     if (!newFolderInput.trim()) return;
+    if (!selectedExploreLesson) return;
+    const folderName = newFolderInput.trim();
     playClickSound();
-    if (!lessonFolders.includes(newFolderInput.trim())) {
-      setLessonFolders([...lessonFolders, newFolderInput.trim()]);
-    }
-    setActiveFolder(newFolderInput.trim());
+
+    const lessonId = selectedExploreLesson.id;
+    setDeletedFoldersMap(prev => {
+      const list = prev[lessonId] || [];
+      if (list.includes(folderName)) {
+        return {
+          ...prev,
+          [lessonId]: list.filter(f => f !== folderName)
+        };
+      }
+      return prev;
+    });
+
+    setCustomFoldersMap(prev => {
+      const list = prev[lessonId] || [];
+      if (!list.includes(folderName)) {
+        return {
+          ...prev,
+          [lessonId]: [...list, folderName]
+        };
+      }
+      return prev;
+    });
+
+    setActiveFolder(folderName);
     setNewFolderInput("");
   };
 
@@ -1488,6 +1615,15 @@ export default function App() {
         playClickSound();
         try {
           const lessonId = selectedExploreLesson.id;
+
+          setCustomFoldersMap(prev => {
+            const list = prev[lessonId] || [];
+            return {
+              ...prev,
+              [lessonId]: list.filter(f => f !== folderName)
+            };
+          });
+
           const mats = selectedExploreLesson.materials || [];
           const targets = mats.filter(m => {
             const sec = m.section || "Chuyên mục học tập khác 🌐";
@@ -1566,6 +1702,23 @@ export default function App() {
     playClickSound();
     try {
       const lessonId = selectedExploreLesson.id;
+
+      setCustomFoldersMap(prev => {
+        const list = prev[lessonId] || [];
+        const isCustom = list.includes(oldName);
+        if (isCustom) {
+          return {
+            ...prev,
+            [lessonId]: list.map(f => f === oldName ? cleanNewName : f)
+          };
+        } else {
+          return {
+            ...prev,
+            [lessonId]: [...list, cleanNewName]
+          };
+        }
+      });
+
       const mats = selectedExploreLesson.materials || [];
       const targets = mats.filter(m => {
         const sec = m.section || "Chuyên mục học tập khác 🌐";
@@ -5064,6 +5217,61 @@ export default function App() {
             <main className="flex-1 p-4 md:p-8 overflow-y-auto flex flex-col gap-6">
               <RealtimeClock />
 
+              {/* Real-time Screen Synchronization Indicator */}
+              {appState.activeLessonId && (
+                <div className="bg-white border-2 border-emerald-405 p-4 rounded-[24px] shadow-sm flex flex-col md:flex-row justify-between items-center gap-3 animate-fade-in">
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="relative flex h-3.5 w-3.5 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500"></span>
+                    </span>
+                    <span className="font-bold text-zinc-700 leading-normal">
+                      📡 <span className="text-emerald-605 font-extrabold tracking-wider uppercase">MÀN HÌNH ĐỒNG BỘ: Cô Dương đang giảng bài</span>{" "}
+                      <span className="text-[#042F1A] font-black underline decoration-2 decoration-emerald-400">
+                        {appState.lessons?.find(l => l.id === appState.activeLessonId)?.title || "Bài Học Trực Tuyến"}
+                      </span>
+                      {appState.activeFolder && (
+                        <>
+                          {" "}» Thư mục đang chỉ:{" "}
+                          <span className="text-amber-700 font-extrabold bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 ml-1 inline-block">{appState.activeFolder}</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        playClickSound();
+                        const nextVal = !isScreenSynced;
+                        setIsScreenSynced(nextVal);
+                        if (nextVal) {
+                          // Force update to catch up immediately
+                          fetchState();
+                        }
+                      }}
+                      className={`px-3 py-2 rounded-xl font-black text-[10px] uppercase tracking-wider cursor-pointer select-none border-2 transition-all flex items-center gap-1.5 ${
+                        isScreenSynced
+                          ? "bg-emerald-50 border-emerald-400 text-emerald-800 shadow-sm hover:bg-emerald-100"
+                          : "bg-zinc-105 hover:bg-zinc-200 border-zinc-300 text-zinc-650"
+                      }`}
+                    >
+                      {isScreenSynced ? (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                          <span>Đang nhận bài giảng cô giáo (BẬT)</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                          <span>Tự xem bài độc lập (TẮT)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Playful student or parent title header card in natural tone */}
               <div className="bg-[#DCFCE7] p-5 rounded-[32px] border-4 border-emerald-400 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 animate-fade-in">
                 <div className="flex items-center gap-3">
@@ -5079,7 +5287,7 @@ export default function App() {
                     <p className="text-xs font-bold text-emerald-805 mt-1">
                       {currentRole === 'parent' 
                         ? "Đồng hành và theo sát hành trình tự học, rèn luyện tư duy sáng tạo của con thân yêu! 💕"
-                        : "Hôm nay hãy cùng Gấu Biết Tuốt AI rinh thật nhiều nhận xét điểm sao xuất sắc nhé! 🌿"
+                        : "👋 Cách học: Chọn 1 trong 6 Chủ đề dưới đây ➡️ Nhấp vào Bài học con muốn học ➡️ Nhấn nút xanh lá \"🚀 NHẤP VÀO ĐÂY ĐỂ HỌC\" để bắt đầu ngay nhé! 🌟"
                       }
                     </p>
                   </div>
@@ -5703,7 +5911,7 @@ export default function App() {
                                               type="button"
                                               onClick={() => {
                                                 playClickSound();
-                                                setSelectedExploreLesson(lesson);
+                                                handleStudentSelectLesson(lesson);
                                               }}
                                               className="text-emerald-805 hover:text-emerald-900 underline font-black mt-1.5 inline-block cursor-pointer"
                                             >
@@ -5733,8 +5941,7 @@ export default function App() {
                                                       key={m.id}
                                                       onClick={() => {
                                                         playClickSound();
-                                                        setSelectedExploreLesson(lesson);
-                                                        setActiveMaterial(m);
+                                                        handleStudentSelectLesson(lesson, m);
                                                       }}
                                                       className="p-1.5 bg-white hover:bg-emerald-50 rounded-xl border border-zinc-150 flex items-center justify-between text-[11px] font-bold text-zinc-700 hover:text-[#022C22] transition-all cursor-pointer shadow-2xs gap-2"
                                                       title="Nhấp để hiển thị học trực quan"
@@ -5767,7 +5974,7 @@ export default function App() {
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       playClickSound();
-                                      setSelectedExploreLesson(lesson);
+                                      handleStudentSelectLesson(lesson);
                                     }}
                                     className="text-[10px] bg-emerald-50 text-emerald-800 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 font-extrabold text-center shrink-0 uppercase transition-all"
                                   >
@@ -5841,7 +6048,7 @@ export default function App() {
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               playClickSound();
-                                              setSelectedExploreLesson(lesson);
+                                              handleStudentSelectLesson(lesson);
                                             }}
                                             title="Click để xem chi tiết & nhận xét sao"
                                           >
@@ -5852,7 +6059,7 @@ export default function App() {
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               playClickSound();
-                                              setSelectedExploreLesson(lesson);
+                                              handleStudentSelectLesson(lesson);
                                             }}
                                             className="text-[10px] bg-emerald-55 text-emerald-800 hover:bg-emerald-100 px-1.5 py-0.5 rounded border text-center shrink-0 font-extrabold cursor-pointer uppercase transition-all"
                                           >
@@ -6250,7 +6457,7 @@ export default function App() {
                               }}
                               className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl shadow-xs cursor-pointer inline-flex items-center justify-center gap-1.5 transition-all hover:scale-[1.01]"
                             >
-                              🚀 PHÓNG TO TRẢI NGHIỆM HỌC LIỆU TRÊN TAB RIÊNG
+                              🚀 NHẤP VÀO ĐÂY ĐỂ HỌC
                             </button>
                           </div>
                         )}
