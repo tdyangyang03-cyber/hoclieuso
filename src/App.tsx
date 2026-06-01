@@ -62,6 +62,77 @@ function getLessonTypeIcon(type: string): string {
   return "🌐";
 }
 
+function isUrlImage(url: string, type?: string): boolean {
+  if (!url) return false;
+  const lowerUrl = url.toLowerCase();
+  
+  if (type) {
+    const lowerType = type.toLowerCase();
+    if (lowerType === "image" || lowerType === "images" || lowerType === "🖼️" || lowerType === "photo") {
+      return true;
+    }
+  }
+
+  // Check base64
+  if (lowerUrl.startsWith("data:image/")) return true;
+
+  // Check extensions
+  if (
+    lowerUrl.endsWith(".png") ||
+    lowerUrl.endsWith(".jpg") ||
+    lowerUrl.endsWith(".jpeg") ||
+    lowerUrl.endsWith(".gif") ||
+    lowerUrl.endsWith(".webp") ||
+    lowerUrl.endsWith(".bmp") ||
+    lowerUrl.endsWith(".svg")
+  ) {
+    return true;
+  }
+
+  try {
+    const urlPath = lowerUrl.split('?')[0].split('#')[0];
+    if (
+      urlPath.endsWith(".png") ||
+      urlPath.endsWith(".jpg") ||
+      urlPath.endsWith(".jpeg") ||
+      urlPath.endsWith(".gif") ||
+      urlPath.endsWith(".webp") ||
+      urlPath.endsWith(".bmp") ||
+      urlPath.endsWith(".svg")
+    ) {
+      return true;
+    }
+  } catch (e) {}
+
+  if (
+    lowerUrl.includes("drive.google.com/uc") ||
+    lowerUrl.includes("images.unsplash.com") ||
+    lowerUrl.includes("imgur.com") ||
+    (lowerUrl.includes("uploads") && (
+      lowerUrl.includes(".png") ||
+      lowerUrl.includes(".jpg") ||
+      lowerUrl.includes(".jpeg") ||
+      lowerUrl.includes(".webp") ||
+      lowerUrl.includes(".gif") ||
+      lowerUrl.includes(".svg")
+    ))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function isUrlPdf(url: string, type?: string): boolean {
+  if (!url) return false;
+  const lowerUrl = url.toLowerCase();
+  if (type) {
+    const lowerType = type.toLowerCase();
+    if (lowerType === "pdf" || lowerType === "📄") return true;
+  }
+  return lowerUrl.endsWith(".pdf") || lowerUrl.split('?')[0].split('#')[0].endsWith(".pdf");
+}
+
 function getEmbedUrl(url: string): string {
   if (!url) return "";
   const trimmed = url.trim();
@@ -71,6 +142,50 @@ function getEmbedUrl(url: string): string {
   const match = trimmed.match(ytRegex);
   if (match && match[1]) {
     return `https://www.youtube.com/embed/${match[1]}?autoplay=0`;
+  }
+
+  // Canva embeds support (Convert Canva edit/view link directly to embed)
+  if (trimmed.includes("canva.com/design/")) {
+    const canvaMatch = trimmed.match(/canva\.com\/design\/([A-Za-z0-9_-]+)/);
+    if (canvaMatch && canvaMatch[1]) {
+      const displayMode = trimmed.includes("/watch") ? "watch" : "view";
+      return `https://www.canva.com/design/${canvaMatch[1]}/${displayMode}?embed`;
+    }
+  }
+
+  // Wordwall embeds support
+  if (trimmed.includes("wordwall.net")) {
+    const wordwallMatch = trimmed.match(/wordwall\.net\/(?:resource|play|embed\/(?:resource|play))\/([0-9]+)/);
+    if (wordwallMatch && wordwallMatch[1]) {
+      return `https://wordwall.net/embed/resource/${wordwallMatch[1]}`;
+    }
+  }
+
+  // Scratch embeds support
+  if (trimmed.includes("scratch.mit.edu/projects/")) {
+    const scratchMatch = trimmed.match(/scratch\.mit\.edu\/projects\/([0-9]+)/);
+    if (scratchMatch && scratchMatch[1]) {
+      return `https://scratch.mit.edu/projects/${scratchMatch[1]}/embed`;
+    }
+  }
+
+  // Google Drive links (Documents / Slides / Videos) conversion for safe embedding
+  if (trimmed.includes("drive.google.com")) {
+    if (trimmed.includes("/view")) {
+      return trimmed.replace(/\/view([?#].*)?$/, "/preview");
+    }
+    if (trimmed.includes("?id=")) {
+      const driveMatch = trimmed.match(/[?&]id=([^&]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+    }
+    if (trimmed.includes("/file/d/")) {
+      const driveMatch = trimmed.match(/\/file\/d\/([^\/]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+    }
   }
 
   // Google Documents links (Slides, Docs, Sheets) conversion for safe embedding
@@ -333,6 +448,7 @@ export default function App() {
     section: "Video bài giảng 📹"
   });
 
+  const [isFolderUploading, setIsFolderUploading] = useState(false);
   const [lessonFolders, setLessonFolders] = useState<string[]>([]);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [newFolderInput, setNewFolderInput] = useState("");
@@ -497,110 +613,52 @@ export default function App() {
       }
       const data = await res.json();
       if (data) {
-        // Smart merge server state with local state to survive Vercel stateless container cycles
+        // Smart session synchronizer to survive Cloud Run server context restarts without state loss
         let merged = data;
         const local = localStorage.getItem("khoahoc4_state");
         if (local) {
           try {
             const parsedLocal = JSON.parse(local);
             if (parsedLocal) {
-              const mergeById = (localArr: any[] = [], serverArr: any[] = [], idKey = "id") => {
-                const map = new Map();
-                // Load all server elements first
-                serverArr.forEach(item => {
-                  if (item && item[idKey]) map.set(item[idKey], item);
+              // Server is in pristine/default seed status if it has exactly its initial seed events
+              const isServerSeedState = 
+                data.lessons && 
+                data.lessons.length === 2 && 
+                data.lessons.some((l: any) => l.id === "L1") && 
+                data.lessons.some((l: any) => l.id === "L2") &&
+                data.parentFeedback &&
+                data.parentFeedback.length === 1 &&
+                data.parentFeedback[0]?.id === "f1" &&
+                (!data.workbookSubmissions || data.workbookSubmissions.length === 0);
+
+              // Client contains custom modifications/additions that should be preserved on restart
+              const clientHasCustomData = 
+                (parsedLocal.lessons && parsedLocal.lessons.length > 2) ||
+                (parsedLocal.lessons && parsedLocal.lessons.some((l: any) => l.id !== "L1" && l.id !== "L2")) ||
+                (parsedLocal.parentFeedback && parsedLocal.parentFeedback.length > 1) ||
+                (parsedLocal.workbookSubmissions && parsedLocal.workbookSubmissions.length > 0) ||
+                (parsedLocal.mindmapSubmissions && parsedLocal.mindmapSubmissions.length > 0) ||
+                (parsedLocal.students && parsedLocal.students.length > 2);
+
+              if (isServerSeedState && clientHasCustomData) {
+                // Server restarted or state cleared: push client's backup state to restore online database
+                const resRestore = await fetch("/api/state/restore", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(parsedLocal)
                 });
-                // Load/merge local elements (do not overwrite server state if they match perfectly, but keep local items if not in server)
-                localArr.forEach(item => {
-                  if (item && item[idKey]) {
-                    if (map.has(item[idKey])) {
-                      const serverItem = map.get(item[idKey]);
-                      // For parentFeedback and others, preserve properties
-                      map.set(item[idKey], { ...item, ...serverItem });
-                    } else {
-                      map.set(item[idKey], item);
-                    }
-                  }
-                });
-                return Array.from(map.values());
-              };
-
-              const deletedFeedbacks = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
-                } catch {
-                  return [];
+                const restoreData = await resRestore.json();
+                if (restoreData.success) {
+                  merged = restoreData.state;
                 }
-              })();
-
-              const deletedLessons = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_lessons") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              const deletedStudents = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_students") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              const deletedPlans = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_plans") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              const deletedEvents = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_events") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              const deletedSheets = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_sheets") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              const deletedDiscussions = (() => {
-                try {
-                  return JSON.parse(localStorage.getItem("khoahoc4_deleted_discussions") || "[]");
-                } catch {
-                  return [];
-                }
-              })();
-
-              // Safely merge arrays to ensure nothing from local is lost
-              merged = {
-                ...data,
-                lessons: mergeById(parsedLocal.lessons, data.lessons).filter(item => item && !deletedLessons.includes(item.id)),
-                students: mergeById(parsedLocal.students, data.students).filter(item => item && !deletedStudents.includes(item.id)),
-                workbookSubmissions: mergeById(parsedLocal.workbookSubmissions, data.workbookSubmissions),
-                mindmapSubmissions: mergeById(parsedLocal.mindmapSubmissions, data.mindmapSubmissions),
-                parentFeedback: mergeById(parsedLocal.parentFeedback, data.parentFeedback).filter(fb => fb && !deletedFeedbacks.includes(fb.id)),
-                discussionThreads: mergeById(parsedLocal.discussionThreads, data.discussionThreads).filter(item => item && !deletedDiscussions.includes(item.id)),
-                teacherNotes: mergeById(parsedLocal.teacherNotes, data.teacherNotes),
-                lessonPlans: mergeById(parsedLocal.lessonPlans, data.lessonPlans).filter(item => item && !deletedPlans.includes(item.id)),
-                scheduleEvents: mergeById(parsedLocal.scheduleEvents, data.scheduleEvents).filter(item => item && !deletedEvents.includes(item.id)),
-                studySheets: mergeById(parsedLocal.studySheets, data.studySheets).filter(item => item && !deletedSheets.includes(item.id)),
-                gradesAndComments: mergeById(parsedLocal.gradesAndComments, data.gradesAndComments),
-                attendanceDays: Array.from(new Set([...(parsedLocal.attendanceDays || []), ...(data.attendanceDays || [])])),
-                teacherProfile: { ...parsedLocal.teacherProfile, ...data.teacherProfile }
-              };
+              } else {
+                // Server is running lively as absolute source of truth. Take latest edits, creations, or deletions directly!
+                merged = data;
+              }
             }
           } catch (err) {
-            console.warn("Local storage state merge issue:", err);
+            console.warn("Local storage state synchronizer warning:", err);
+            merged = data;
           }
         }
 
@@ -1056,6 +1114,51 @@ export default function App() {
         setIsOfflineMode(true);
       }
     });
+  };
+
+  const handleRenameStudent = async (id: string, currentName: string) => {
+    const newName = prompt("Nhập tên mới cho học sinh:", currentName);
+    if (!newName || !newName.trim() || newName.trim() === currentName) return;
+    const cleanName = newName.trim();
+    playClickSound();
+
+    updateOfflineState(prev => {
+      const students = (prev.students || []).map((s: any) => s.id === id ? { ...s, name: cleanName } : s);
+      const gradesAndComments = (prev.gradesAndComments || []).map((g: any) => g.studentId === id ? { ...g, studentName: cleanName } : g);
+      const parentFeedback = (prev.parentFeedback || []).map((f: any) => f.studentId === id ? { ...f, studentName: cleanName, parentName: "Phụ huynh em " + cleanName } : f);
+      const discussionThreads = (prev.discussionThreads || []).map((t: any) => {
+        if (!t.comments) return t;
+        const comments = t.comments.map((c: any) => c.studentId === id ? { ...c, studentName: cleanName } : c);
+        return { ...t, comments };
+      });
+      const lessons = (prev.lessons || []).map((l: any) => {
+        if (!l.comments) return l;
+        const comments = l.comments.map((c: any) => c.authorId === id ? { ...c, authorName: cleanName } : c);
+        return { ...l, comments };
+      });
+      return { ...prev, students, gradesAndComments, parentFeedback, discussionThreads, lessons };
+    });
+
+    if (isOfflineMode) {
+      playSparkleSound();
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/students/${id}/rename`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: cleanName })
+      });
+      const data = await res.json();
+      if (data.success) {
+        playSparkleSound();
+        fetchState();
+      }
+    } catch (err) {
+      console.error(err);
+      setIsOfflineMode(true);
+    }
   };
 
   const handlePostLessonComment = async (lessonId: string) => {
@@ -3101,6 +3204,14 @@ export default function App() {
                                     </button>
 
                                     <button
+                                      onClick={() => handleRenameStudent(student.id, student.name)}
+                                      className="p-1.5 hover:bg-amber-50 text-amber-600 rounded-lg cursor-pointer shrink-0 transition-all"
+                                      title="Đổi tên học sinh"
+                                    >
+                                      <Edit className="w-4 h-4" />
+                                    </button>
+
+                                    <button
                                       onClick={() => handleDeleteStudent(student.id)}
                                       className="p-1.5 hover:bg-rose-50 text-rose-500 rounded-lg cursor-pointer shrink-0 transition-all"
                                       title="Xóa học sinh"
@@ -3785,18 +3896,33 @@ export default function App() {
                                 e.preventDefault();
                                 const file = e.dataTransfer.files?.[0];
                                 if (file) {
-                                  const reader = new FileReader();
                                   setIsSheetUploading(true);
-                                  reader.onload = (event) => {
+                                  const reader = new FileReader();
+                                  reader.onload = async (event) => {
                                     if (event.target?.result && typeof event.target.result === "string") {
-                                      setSheetFormUrl(event.target.result);
-                                      if (!sheetFormTitle.trim()) {
-                                        const nameNoExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                                        setSheetFormTitle(nameNoExt);
+                                      try {
+                                        const response = await fetch("/api/upload", {
+                                          method: "POST",
+                                          headers: { "Content-Type": "application/json" },
+                                          body: JSON.stringify({ name: file.name, base64: event.target.result })
+                                        });
+                                        const upData = await response.json();
+                                        if (upData.success && upData.url) {
+                                          setSheetFormUrl(upData.url);
+                                          if (!sheetFormTitle.trim()) {
+                                            const nameNoExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                                            setSheetFormTitle(nameNoExt);
+                                          }
+                                          playSparkleSound();
+                                        } else {
+                                          alert(upData.error || "Gặp lỗi tải tệp lên máy chủ");
+                                        }
+                                      } catch (err: any) {
+                                        alert("Lỗi kết nối máy chủ: " + err.message);
+                                      } finally {
+                                        setIsSheetUploading(false);
                                       }
-                                      playSparkleSound();
                                     }
-                                    setIsSheetUploading(false);
                                   };
                                   reader.readAsDataURL(file);
                                 }
@@ -3817,16 +3943,31 @@ export default function App() {
                                   if (file) {
                                     const reader = new FileReader();
                                     setIsSheetUploading(true);
-                                    reader.onload = (event) => {
+                                    reader.onload = async (event) => {
                                       if (event.target?.result && typeof event.target.result === "string") {
-                                        setSheetFormUrl(event.target.result);
-                                        if (!sheetFormTitle.trim()) {
-                                          const nameNoExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
-                                          setSheetFormTitle(nameNoExt);
+                                        try {
+                                          const response = await fetch("/api/upload", {
+                                            method: "POST",
+                                            headers: { "Content-Type": "application/json" },
+                                            body: JSON.stringify({ name: file.name, base64: event.target.result })
+                                          });
+                                          const upData = await response.json();
+                                          if (upData.success && upData.url) {
+                                            setSheetFormUrl(upData.url);
+                                            if (!sheetFormTitle.trim()) {
+                                              const nameNoExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                                              setSheetFormTitle(nameNoExt);
+                                            }
+                                            playSparkleSound();
+                                          } else {
+                                            alert(upData.error || "Gặp sự cố tải tệp");
+                                          }
+                                        } catch (err: any) {
+                                          alert("Lỗi kết nối máy chủ: " + err.message);
+                                        } finally {
+                                          setIsSheetUploading(false);
                                         }
-                                        playSparkleSound();
                                       }
-                                      setIsSheetUploading(false);
                                     };
                                     reader.readAsDataURL(file);
                                   }
@@ -3850,11 +3991,11 @@ export default function App() {
                             </div>
 
                             {/* Local file state indicator */}
-                            {sheetFormUrl && sheetFormUrl.startsWith("data:") && (
+                            {sheetFormUrl && (sheetFormUrl.startsWith("data:") || sheetFormUrl.startsWith("/uploads/")) && (
                               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 flex flex-col gap-2 text-left">
                                 <div className="flex justify-between items-center text-[10px]">
                                   <span className="font-extrabold text-emerald-800 flex items-center gap-1">
-                                    🌟 CHUYỂN ĐỔI THÀNH CÔNG SANG PHIẾU ONLINE!
+                                    🌟 TẢI LÊN THÀNH CÔNG HỌC LIỆU ĐỒNG BỘ!
                                   </span>
                                   <button
                                     type="button"
@@ -3868,22 +4009,22 @@ export default function App() {
                                   </button>
                                 </div>
                                 <div className="border border-emerald-100 rounded-lg p-2 bg-white flex items-center justify-center text-center">
-                                  {sheetFormUrl.startsWith("data:image/") ? (
+                                  {sheetFormUrl.startsWith("data:image/") || /\.(jpg|jpeg|png|webp|gif)$/i.test(sheetFormUrl) ? (
                                     <img src={sheetFormUrl} alt="Preview" className="max-h-32 rounded object-contain" />
-                                  ) : sheetFormUrl.startsWith("data:audio/") ? (
+                                  ) : sheetFormUrl.startsWith("data:audio/") || /\.(mp3|wav|m4a|aac|ogg)$/i.test(sheetFormUrl) ? (
                                     <div className="flex flex-col items-center gap-1">
-                                      <span className="text-lg">🔊 Bản ghi âm học tập</span>
+                                      <span className="text-[10px] font-black text-amber-900 block">🔊 Bản ghi âm nghe mượt</span>
                                       <audio src={sheetFormUrl} controls className="max-h-12 w-full max-w-xs" />
                                     </div>
-                                  ) : sheetFormUrl.startsWith("data:video/") ? (
+                                  ) : sheetFormUrl.startsWith("data:video/") || /\.(mp4|webm|mov)$/i.test(sheetFormUrl) ? (
                                     <div className="flex flex-col items-center gap-1">
-                                      <span className="text-lg">🎬 Clip bài tập khoa học</span>
-                                      <video src={sheetFormUrl} controls className="max-h-32 rounded" />
+                                      <span className="text-[10px] font-black text-amber-900 block">🎬 Clip bài giảng khoa học</span>
+                                      <video src={sheetFormUrl} controls className="max-h-32 rounded bg-black" />
                                     </div>
                                   ) : (
                                     <div className="py-2">
-                                      <span className="text-xs font-bold text-zinc-650 block">📄 Học liệu PDF / Tài liệu Văn bản</span>
-                                      <span className="text-[9px] text-zinc-400 block mt-0.5">Đã được chuyển sang dạng phiếu bài tập trực tuyến</span>
+                                      <span className="text-xs font-bold text-zinc-650 block">📄 Học liệu PDF / Slides / Giáo trình điện tử</span>
+                                      <span className="text-[9px] text-zinc-400 block mt-0.5">{sheetFormUrl}</span>
                                     </div>
                                   )}
                                 </div>
@@ -6003,23 +6144,7 @@ export default function App() {
 
                   // Helper check media types
                   const isImg = (url: string, type: string) => {
-                    if (!url) return false;
-                    const lowerUrl = url.toLowerCase();
-                    const lowerType = type ? type.toLowerCase() : "";
-                    return (
-                      lowerType === "image" ||
-                      lowerType === "images" ||
-                      lowerType === "🖼️" ||
-                      lowerUrl.endsWith(".png") ||
-                      lowerUrl.endsWith(".jpg") ||
-                      lowerUrl.endsWith(".jpeg") ||
-                      lowerUrl.endsWith(".gif") ||
-                      lowerUrl.endsWith(".webp") ||
-                      lowerUrl.endsWith(".bmp") ||
-                      lowerUrl.includes("drive.google.com/uc") ||
-                      lowerUrl.includes("images.unsplash.com") ||
-                      lowerUrl.includes("imgur.com")
-                    );
+                    return isUrlImage(url, type);
                   };
 
                   const isVid = (url: string, type: string) => {
@@ -6512,7 +6637,7 @@ export default function App() {
                                     <label className="text-[8px] text-zinc-500 font-extrabold uppercase">ĐƯỜNG DẪN LINK URL:</label>
                                     <input
                                       type="text"
-                                      placeholder="https://..."
+                                      placeholder="https://... hoặc tải từ máy"
                                       value={materialForm.section === folder ? materialForm.url : ""}
                                       onChange={(e) => {
                                         setMaterialForm({
@@ -6526,6 +6651,77 @@ export default function App() {
                                       className="p-1.5 border border-zinc-250 rounded-lg bg-white text-xs font-semibold outline-none focus:border-amber-400"
                                       required
                                     />
+                                  </div>
+
+                                  {/* Drag & Drop Local File Attachment for Folder */}
+                                  <div className="flex flex-col gap-0.5">
+                                    <label className="text-[8px] text-zinc-500 font-extrabold uppercase">HOẶC CHỌN TỆP TỪ THIẾT BỊ 💻:</label>
+                                    <div className="relative border border-dashed border-amber-300 hover:border-amber-400 bg-white/60 hover:bg-white rounded-lg p-2 text-center transition-all cursor-pointer flex flex-col items-center justify-center min-h-[40px] group">
+                                      <input
+                                        type="file"
+                                        accept="image/*,video/*,audio/*,application/pdf"
+                                        onChange={async (e) => {
+                                          const file = e.target.files?.[0];
+                                          if (!file) return;
+                                          setIsFolderUploading(true);
+                                          playClickSound();
+                                          try {
+                                            const r = new FileReader();
+                                            r.onload = async (event) => {
+                                              const b64 = event.target?.result;
+                                              if (typeof b64 === "string") {
+                                                try {
+                                                  const response = await fetch("/api/upload", {
+                                                    method: "POST",
+                                                    headers: { "Content-Type": "application/json" },
+                                                    body: JSON.stringify({ name: file.name, base64: b64 })
+                                                  });
+                                                  const upData = await response.json();
+                                                  if (upData.success && upData.url) {
+                                                    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+                                                    let docType = "video";
+                                                    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) docType = "image";
+                                                    else if (['pdf', 'ppt', 'pptx', 'doc', 'docx'].includes(ext)) docType = "pdf";
+
+                                                    setMaterialForm({
+                                                      title: file.name.substring(0, file.name.lastIndexOf('.')) || file.name,
+                                                      type: docType,
+                                                      url: upData.url,
+                                                      description: "Cô giáo chia sẻ thêm lúc " + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
+                                                      section: folder
+                                                    });
+                                                    playSparkleSound();
+                                                  } else {
+                                                    alert(upData.error || "Gặp sự cố tải file");
+                                                  }
+                                                } catch (err: any) {
+                                                  alert("Lỗi kết nối máy chủ: " + err.message);
+                                                } finally {
+                                                  setIsFolderUploading(false);
+                                                }
+                                              }
+                                            };
+                                            r.readAsDataURL(file);
+                                          } catch (err: any) {
+                                            alert("Không đọc được tệp: " + err.message);
+                                            setIsFolderUploading(false);
+                                          }
+                                        }}
+                                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                                        disabled={isFolderUploading}
+                                      />
+                                      {isFolderUploading ? (
+                                        <div className="flex items-center gap-1">
+                                          <div className="w-3 h-3 border-2 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                                          <span className="text-[9px] text-[#78350F] font-black">Mạng đang đồng bộ tệp tải lên...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-1">
+                                          <span className="text-xs group-hover:scale-110 transition-transform">💻</span>
+                                          <span className="text-[9px] font-black text-amber-955">Chọn tệp Đồ Học, Video bài giảng, PDF hoặc ảnh...</span>
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
 
                                   <div className="grid grid-cols-2 gap-1.5 mt-1">

@@ -39,7 +39,51 @@ function getEmbedUrl(url: string): string {
     return `https://www.youtube.com/embed/${match[1]}?autoplay=0`;
   }
 
-  // Google documents safe embedding
+  // Canva embeds support (Convert Canva edit/view link directly to embed)
+  if (trimmed.includes("canva.com/design/")) {
+    const canvaMatch = trimmed.match(/canva\.com\/design\/([A-Za-z0-9_-]+)/);
+    if (canvaMatch && canvaMatch[1]) {
+      const displayMode = trimmed.includes("/watch") ? "watch" : "view";
+      return `https://www.canva.com/design/${canvaMatch[1]}/${displayMode}?embed`;
+    }
+  }
+
+  // Wordwall embeds support
+  if (trimmed.includes("wordwall.net")) {
+    const wordwallMatch = trimmed.match(/wordwall\.net\/(?:resource|play|embed\/(?:resource|play))\/([0-9]+)/);
+    if (wordwallMatch && wordwallMatch[1]) {
+      return `https://wordwall.net/embed/resource/${wordwallMatch[1]}`;
+    }
+  }
+
+  // Scratch embeds support
+  if (trimmed.includes("scratch.mit.edu/projects/")) {
+    const scratchMatch = trimmed.match(/scratch\.mit\.edu\/projects\/([0-9]+)/);
+    if (scratchMatch && scratchMatch[1]) {
+      return `https://scratch.mit.edu/projects/${scratchMatch[1]}/embed`;
+    }
+  }
+
+  // Google Drive links (Documents / Slides / Videos) conversion for safe embedding
+  if (trimmed.includes("drive.google.com")) {
+    if (trimmed.includes("/view")) {
+      return trimmed.replace(/\/view([?#].*)?$/, "/preview");
+    }
+    if (trimmed.includes("?id=")) {
+      const driveMatch = trimmed.match(/[?&]id=([^&]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+    }
+    if (trimmed.includes("/file/d/")) {
+      const driveMatch = trimmed.match(/\/file\/d\/([^\/]+)/);
+      if (driveMatch && driveMatch[1]) {
+        return `https://drive.google.com/file/d/${driveMatch[1]}/preview`;
+      }
+    }
+  }
+
+  // Google Documents links (Slides, Docs, Sheets) conversion for safe embedding
   if (trimmed.includes("docs.google.com/presentation") || trimmed.includes("docs.google.com/document") || trimmed.includes("docs.google.com/spreadsheets")) {
     if (trimmed.includes("/pub?")) {
       return trimmed;
@@ -62,17 +106,34 @@ function isEmbeddable(url: string): boolean {
 
   const lower = url.toLowerCase();
   if (lower.includes("docs.google.com") || 
+      lower.includes("drive.google.com") || 
       lower.includes("youtube.com") || 
       lower.includes("youtu.be") || 
       lower.includes(".pdf") || 
       lower.includes("canva.com") || 
       lower.includes("vimeo.com") ||
+      lower.includes("wordwall.net") ||
+      lower.includes("scratch.mit.edu") ||
       lower.includes("embed")) {
     return true;
   }
   
   const hasImageExtension = /\.(jpg|jpeg|png|webp|gif|svg)/i.test(lower);
   return !hasImageExtension;
+}
+
+function isWorksheetVideo(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith("data:video/")) return true;
+  const lower = url.toLowerCase();
+  return lower.endsWith(".mp4") || lower.endsWith(".webm") || lower.endsWith(".mov") || lower.endsWith(".ogg");
+}
+
+function isWorksheetAudio(url: string): boolean {
+  if (!url) return false;
+  if (url.startsWith("data:audio/")) return true;
+  const lower = url.toLowerCase();
+  return lower.endsWith(".mp3") || lower.endsWith(".wav") || lower.endsWith(".m4a") || lower.endsWith(".aac") || lower.endsWith(".ogg");
 }
 
 export default function StudySheetWorkspace({
@@ -118,7 +179,7 @@ export default function StudySheetWorkspace({
         {/* Left: Interactive/Visual Document Image */}
         <div className="flex flex-col gap-2">
           <span className="text-xs font-bold text-zinc-550 block">🖼️ ĐỀ BÀI (TÀI LIỆU, VIDEO HOẶC ẢNH PHIẾU BÀI TẬP)</span>
-          {sheet.imageUrl && sheet.imageUrl.startsWith("data:audio/") ? (
+          {sheet.imageUrl && isWorksheetAudio(sheet.imageUrl) ? (
             <div className="p-5 bg-amber-50/55 border-4 border-dashed border-amber-250 rounded-2xl flex flex-col items-center justify-center gap-3 text-center min-h-[200px]">
               <span className="text-4xl text-amber-500">🎧</span>
               <div>
@@ -127,7 +188,7 @@ export default function StudySheetWorkspace({
               </div>
               <audio src={sheet.imageUrl} controls className="w-full max-w-sm" />
             </div>
-          ) : sheet.imageUrl && sheet.imageUrl.startsWith("data:video/") ? (
+          ) : sheet.imageUrl && isWorksheetVideo(sheet.imageUrl) ? (
             <div className="rounded-2xl overflow-hidden border-4 border-zinc-250 shadow-sm bg-black">
               <video src={sheet.imageUrl} controls className="w-full max-h-96" />
             </div>

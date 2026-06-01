@@ -289,6 +289,17 @@ app.get("/api/state", (req, res) => {
   res.json(state);
 });
 
+app.post("/api/state/restore", (req, res) => {
+  const clientState = req.body;
+  if (clientState) {
+    state = {
+      ...state,
+      ...clientState
+    };
+  }
+  res.json({ success: true, state });
+});
+
 app.post("/api/state/reset", (req, res) => {
   state.lessons = [];
   state.workbookSubmissions = [];
@@ -539,6 +550,103 @@ app.delete("/api/students/:id", (req, res) => {
   state.students = state.students.filter(s => s.id !== req.params.id);
   state.gradesAndComments = state.gradesAndComments.filter(g => g.studentId !== req.params.id);
   res.json({ success: true, students: state.students });
+});
+
+app.post("/api/students/:id/rename", (req, res) => {
+  const { name } = req.body;
+  const studentId = req.params.id;
+  const cleanName = name ? name.trim() : "";
+  
+  if (!cleanName) {
+    return res.status(400).json({ error: "Name cannot be empty" });
+  }
+
+  // Update in state.students
+  const student = state.students.find(s => s.id === studentId);
+  if (student) {
+    student.name = cleanName;
+  }
+
+  // Update in state.gradesAndComments
+  const gradeRecord = state.gradesAndComments.find(g => g.studentId === studentId);
+  if (gradeRecord) {
+    gradeRecord.studentName = cleanName;
+  }
+
+  // Update in state.parentFeedback
+  state.parentFeedback.forEach(f => {
+    if (f.studentId === studentId) {
+      f.studentName = cleanName;
+      f.parentName = "Phụ huynh em " + cleanName;
+    }
+  });
+
+  // Also update in all discussion comments
+  state.discussionThreads.forEach(thread => {
+    if (thread.comments) {
+      thread.comments.forEach(comment => {
+        if (comment.studentId === studentId) {
+          comment.studentName = cleanName;
+        }
+      });
+    }
+  });
+
+  // Also update in lesson comments
+  state.lessons.forEach(lesson => {
+    if (lesson.comments) {
+      lesson.comments.forEach(c => {
+        if (c.authorId === studentId) {
+          c.authorName = cleanName;
+        }
+      });
+    }
+  });
+
+  res.json({
+    success: true,
+    students: state.students,
+    parentFeedback: state.parentFeedback,
+    gradesAndComments: state.gradesAndComments,
+    lessons: state.lessons,
+    discussionThreads: state.discussionThreads
+  });
+});
+
+// File Upload endpoint supporting images, videos, audio, documents, worksheets
+app.post("/api/upload", (req, res) => {
+  const { name, base64 } = req.body;
+  if (!name || !base64) {
+    return res.status(400).json({ error: "Missing name or base64 data" });
+  }
+
+  try {
+    const uploadsDir = path.join(process.cwd(), "uploads");
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    // Extract raw base64 data to buffer
+    let fileBuffer: Buffer;
+    const matches = base64.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (matches && matches.length === 3) {
+      fileBuffer = Buffer.from(matches[2], "base64");
+    } else {
+      fileBuffer = Buffer.from(base64, "base64");
+    }
+
+    const ext = path.extname(name) || ".png";
+    const baseName = path.basename(name, ext).replace(/[^a-zA-Z0-9-]/g, "_");
+    const filename = `${Date.now()}_${baseName}${ext}`;
+    const filePath = path.join(uploadsDir, filename);
+
+    fs.writeFileSync(filePath, fileBuffer);
+    const fileUrl = `/uploads/${filename}`;
+    res.json({ success: true, url: fileUrl });
+  } catch (err: any) {
+    console.error("Local save error:", err);
+    res.status(500).json({ error: "Failed to upload file to backend server: " + err.message });
+  }
 });
 
 // Study worksheets creation
@@ -950,6 +1058,13 @@ async function setupServer() {
     console.log("Running on Vercel, skipping setupServer()");
     return;
   }
+
+  // Create uploads directory if it doesn't exist
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+  app.use("/uploads", express.static(uploadsDir));
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

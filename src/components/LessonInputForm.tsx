@@ -40,6 +40,8 @@ export default function LessonInputForm({
 }: LessonInputFormProps) {
   const [isAddingCustomType, setIsAddingCustomType] = useState(false);
   const [customTypeInput, setCustomTypeInput] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   const handleAddCustomType = () => {
     playClickSound();
@@ -52,6 +54,46 @@ export default function LessonInputForm({
       setCustomTypeInput("");
       setIsAddingCustomType(false);
       playSparkleSound();
+    }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setIsUploading(true);
+    setUploadError("");
+    playClickSound();
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result;
+        if (typeof base64 === "string") {
+          try {
+            const res = await fetch("/api/upload", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: file.name, base64 })
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              setLessonForm({ ...lessonForm, url: data.url });
+              playSparkleSound();
+            } else {
+              setUploadError(data.error || "Lỗi tải tệp lên máy chủ");
+            }
+          } catch (err: any) {
+            setUploadError("Mất kết nối máy chủ: " + err.message);
+          } finally {
+            setIsUploading(false);
+          }
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (err: any) {
+      setUploadError("Không thể đọc tệp: " + err.message);
+      setIsUploading(false);
     }
   };
 
@@ -145,13 +187,44 @@ export default function LessonInputForm({
               <div className="flex flex-col gap-1">
                 <label>ĐƯỜNG LIÊN KẾT NHÚNG HỌC LIỆU (URL):</label>
                 <input
-                  type="url"
-                  placeholder="Địa chỉ youtube, canva, slides, pdf, thínghiệm..."
+                  type="text"
+                  placeholder="Địa chỉ youtube, canva, slides, pdf, thínghiệm... hoặc được tạo tự động phía dưới"
                   value={lessonForm.url}
                   onChange={(e) => setLessonForm({ ...lessonForm, url: e.target.value })}
-                  className="p-3 border-2 border-zinc-200 bg-zinc-50 rounded-xl outline-none focus:border-amber-400 font-semibold"
+                  className="p-3 border-2 border-zinc-200 bg-zinc-50 rounded-xl outline-none focus:border-amber-400 font-semibold text-xs"
                   required
                 />
+              </div>
+
+              {/* Advanced Drag & Drop Local File Uploader */}
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-zinc-550 font-black">HOẶC TẢI TỆP ĐỒNG BỘ TỪ MÁY TÍNH CÔ GIÁO (ẢNH, VIDEO, PDF, SLIDES...):</span>
+                <div className="flex flex-col gap-1.5 mt-1 border-2 border-dashed border-amber-200 bg-amber-50/10 hover:bg-amber-50/20 hover:border-amber-400 rounded-2xl p-3 text-center transition-all cursor-pointer relative group min-h-[90px] justify-center items-center">
+                  <input
+                    type="file"
+                    accept="image/*,video/*,audio/*,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleFileUpload}
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10"
+                    disabled={isUploading}
+                  />
+                  {isUploading ? (
+                    <div className="flex flex-col items-center gap-1.5 py-1">
+                      <div className="w-6 h-6 border-3 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-[11px] text-amber-900 font-extrabold animate-pulse">Hệ thống đang tải lên và nhúng đồng bộ bài giảng...</span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-2xl group-hover:scale-115 transition-transform duration-200">📂</span>
+                      <div>
+                        <span className="text-[11px] font-extrabold text-[#78350F] block">NHẤP ĐỂ CHỌN HOẶC THẢ TỆP VÀO ĐÂY</span>
+                        <span className="text-[9px] text-[#92400E] font-medium block">Hỗ trợ File Ảnh, Video bài giảng MP4/MOV, Sách PDF, Giáo án điện tử</span>
+                      </div>
+                    </div>
+                  )}
+                  {uploadError && (
+                    <span className="text-[9px] text-rose-600 font-bold block mt-1.5 bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-250">⚠️ {uploadError}</span>
+                  )}
+                </div>
               </div>
 
               <div className="flex flex-col gap-1">
