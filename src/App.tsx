@@ -1,54 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, onSnapshot } from "firebase/firestore";
-import firebaseConfig from "../firebase-applet-config.json";
-
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: null,
-      email: null,
-      emailVerified: null,
-      isAnonymous: null,
-      tenantId: null,
-      providerInfo: []
-    },
-    operationType,
-    path
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
 import {
   Users, BookOpen, Brain, FileSpreadsheet, HeartHandshake, BookCopy,
   UserCheck, ClipboardList, CheckCircle2, Bookmark, Settings, Eye, Trash2, 
@@ -679,34 +629,15 @@ export default function App() {
     isScreenSyncedRef.current = isScreenSynced;
   }, [isScreenSynced]);
 
-  // Real-time Firebase Firestore onSnapshot listener with query cache-busting fallback
+  // Real-time synchronization via periodic polling (safe with any proxy or Vercel static router cache setups)
   useEffect(() => {
     if (isOfflineMode) return;
 
-    const GLOBAL_CLASS_ID = "khoahoc4_chung";
-    console.log(`[Firebase Realtime] Subscribing via onSnapshot to classes/${GLOBAL_CLASS_ID}...`);
-    const docRef = doc(db, "classes", GLOBAL_CLASS_ID);
-
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        console.log("[Firebase Realtime] Received state snapshot update:", data);
-        handleStateUpdate(data);
-      } else {
-        console.warn(`[Firebase Realtime] State document for ${GLOBAL_CLASS_ID} does not exist yet.`);
-      }
-    }, (error) => {
-      console.error("[Firebase Realtime] onSnapshot subscription failure:", error);
-      handleFirestoreError(error, OperationType.GET, `classes/${GLOBAL_CLASS_ID}`);
-    });
-
-    // Run fallback cache-busted REST client polling loop every 8 seconds as robust backup
-    const fallbackInterval = setInterval(fetchState, 8000);
     fetchState();
+    const interval = setInterval(fetchState, 3000);
 
     return () => {
-      unsubscribe();
-      clearInterval(fallbackInterval);
+      clearInterval(interval);
     };
   }, [isOfflineMode]);
 

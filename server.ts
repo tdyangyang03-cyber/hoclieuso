@@ -4,8 +4,6 @@ import dotenv from "dotenv";
 import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createServer as createViteServer } from "vite";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 
 dotenv.config();
 
@@ -181,99 +179,8 @@ let state = {
   activeSubTab: null as string | null
 };
 
-// --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL, CONTAINERS & FIREBASE FIRESTORE ---
-const configPath = path.join(process.cwd(), "firebase-applet-config.json");
-let firestoreDb: any = null;
-
-if (fs.existsSync(configPath)) {
-  try {
-    const firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
-    const firebaseApp = initializeApp(firebaseConfig);
-    firestoreDb = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId || "(default)");
-    console.log("[Firebase Server] Initialized Firestore successfully.");
-  } catch (err) {
-    console.error("[Firebase Server] Failed to initialize Firebase:", err);
-  }
-}
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    authInfo: {
-      userId: null,
-      email: null,
-      emailVerified: null,
-      isAnonymous: null,
-      tenantId: null,
-      providerInfo: []
-    },
-    operationType,
-    path
-  };
-  console.error('[Firebase Server] Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
+// --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL, CONTAINERS & ROBUST STATE ---
 const STATE_FILE_PATH = process.env.VERCEL ? "/tmp/khoahoc4_state.json" : path.join(process.cwd(), "state.json");
-
-const GLOBAL_CLASS_ID = "khoahoc4_chung";
-
-async function getRemoteState() {
-  if (!firestoreDb) return null;
-  try {
-    const docRef = doc(firestoreDb, "classes", GLOBAL_CLASS_ID);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      return snapshot.data();
-    } else {
-      console.log(`[Firebase Server] App state doc not found for ${GLOBAL_CLASS_ID}, seeding with initial state.`);
-      await setDoc(docRef, state);
-      return state;
-    }
-  } catch (err) {
-    console.error(`[Firebase Server] Error getting remote state for ${GLOBAL_CLASS_ID}:`, err);
-    handleFirestoreError(err, OperationType.GET, `classes/${GLOBAL_CLASS_ID}`);
-    return null;
-  }
-}
-
-async function saveRemoteState(newState: any) {
-  if (!firestoreDb) return;
-  try {
-    const docRef = doc(firestoreDb, "classes", GLOBAL_CLASS_ID);
-    await setDoc(docRef, newState);
-    console.log(`[Firebase Server] Successfully saved state to Firestore document 'classes/${GLOBAL_CLASS_ID}'.`);
-  } catch (err) {
-    console.error(`[Firebase Server] Error saving remote state for ${GLOBAL_CLASS_ID}:`, err);
-    handleFirestoreError(err, OperationType.WRITE, `classes/${GLOBAL_CLASS_ID}`);
-  }
-}
 
 function loadPersistedState() {
   try {
@@ -297,11 +204,6 @@ function savePersistedState() {
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
     console.log("[Persistence System] Persisted state successfully to local state.json file:", STATE_FILE_PATH);
     broadcastState();
-    
-    // Asynchronously update Firebase Firestore
-    if (firestoreDb) {
-      saveRemoteState(state).catch(e => console.error("[Persistence System] Firebase save async error:", e));
-    }
   } catch (err) {
     console.error("[Persistence System] Critical error while writing persisted state:", err);
   }
@@ -321,33 +223,8 @@ function broadcastState() {
   });
 }
 
-// Automatically load state on application boot (first local, then Firestore)
+// Automatically load state on application boot
 loadPersistedState();
-if (firestoreDb) {
-  getRemoteState().then((remote) => {
-    if (remote) {
-      state = remote as any;
-      console.log("[Firebase Server] Successfully synchronized in-memory database with Firestore upon boot.");
-    }
-  }).catch((err) => {
-    console.error("[Firebase Server] Initial Firestore fetch failed, relying on local backup:", err);
-  });
-}
-
-// Global loader middleware to pull latest state before resolving any Express route
-app.use(async (req, res, next) => {
-  if (firestoreDb) {
-    try {
-      const remote = await getRemoteState();
-      if (remote) {
-        state = remote as any;
-      }
-    } catch (err) {
-      console.error("[Firebase Server] Direct route fetch state bypass:", err);
-    }
-  }
-  next();
-});
 
 // Express Response Interceptor Middleware to capture any State Mutations & backup to Firestore/local files
 app.use((req: any, res: any, next: any) => {
