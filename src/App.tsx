@@ -1,4 +1,54 @@
 import React, { useState, useEffect } from "react";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, onSnapshot } from "firebase/firestore";
+import firebaseConfig from "../firebase-applet-config.json";
+
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: null,
+      email: null,
+      emailVerified: null,
+      isAnonymous: null,
+      tenantId: null,
+      providerInfo: []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
 import {
   Users, BookOpen, Brain, FileSpreadsheet, HeartHandshake, BookCopy,
   UserCheck, ClipboardList, CheckCircle2, Bookmark, Settings, Eye, Trash2, 
@@ -629,68 +679,33 @@ export default function App() {
     isScreenSyncedRef.current = isScreenSynced;
   }, [isScreenSynced]);
 
-  // Real-time server sync listener (SSE with query-parameter cache-busting fallback)
+  // Real-time Firebase Firestore onSnapshot listener with query cache-busting fallback
   useEffect(() => {
     if (isOfflineMode) return;
 
-    let eventSource: EventSource | null = null;
-    let fallbackInterval: any = null;
+    console.log("[Firebase Realtime] Subscribing via onSnapshot to app/state...");
+    const docRef = doc(db, "app", "state");
 
-    const connectRealtime = () => {
-      try {
-        console.log("[Realtime Stream] Connecting to SSE stream...");
-        eventSource = new EventSource("/api/state/stream");
-
-        eventSource.onopen = () => {
-          console.log("[Realtime Stream] Connected to SSE stream successfully.");
-          if (fallbackInterval) {
-            clearInterval(fallbackInterval);
-            fallbackInterval = null;
-          }
-        };
-
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            if (data) {
-              handleStateUpdate(data);
-            }
-          } catch (err) {
-            console.warn("[Realtime Stream] Error parsing SSE message:", err);
-          }
-        };
-
-        eventSource.onerror = (err) => {
-          console.warn("[Realtime Stream] SSE connection error/disconnected, falling back to polling.", err);
-          if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-          }
-          if (!fallbackInterval) {
-            fallbackInterval = setInterval(fetchState, 3000);
-          }
-        };
-      } catch (e) {
-        console.warn("[Realtime Stream] EventSource initialization failed, using polling.", e);
-        if (!fallbackInterval) {
-          fallbackInterval = setInterval(fetchState, 3000);
-        }
+    const unsubscribe = onSnapshot(docRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        console.log("[Firebase Realtime] Received state snapshot update:", data);
+        handleStateUpdate(data);
+      } else {
+        console.warn("[Firebase Realtime] State document does not exist yet.");
       }
-    };
+    }, (error) => {
+      console.error("[Firebase Realtime] onSnapshot subscription failure:", error);
+      handleFirestoreError(error, OperationType.GET, "app/state");
+    });
 
-    connectRealtime();
-
-    // Start fallback polling initially as well for solid robustness
-    fallbackInterval = setInterval(fetchState, 3000);
+    // Run fallback cache-busted REST client polling loop every 8 seconds as robust backup
+    const fallbackInterval = setInterval(fetchState, 8000);
     fetchState();
 
     return () => {
-      if (eventSource) {
-        eventSource.close();
-      }
-      if (fallbackInterval) {
-        clearInterval(fallbackInterval);
-      }
+      unsubscribe();
+      clearInterval(fallbackInterval);
     };
   }, [isOfflineMode]);
 
