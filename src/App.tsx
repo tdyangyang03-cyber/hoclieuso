@@ -566,6 +566,30 @@ export default function App() {
 
   const useOfflineFallback = () => {
     console.log("[Classroom Engine] Connection retry check... relying on active in-memory state.");
+    setIsOfflineMode(true);
+    
+    // Load offline lessons from storage if they exist and merge them dynamically
+    const localStr = localStorage.getItem("khoahoc4_custom_lessons");
+    if (localStr) {
+      try {
+        const customLessons = JSON.parse(localStr);
+        if (Array.isArray(customLessons)) {
+          setAppState(prev => {
+            const apiIds = new Set(prev.lessons.map(l => l.id));
+            const customToMerge = customLessons.filter(l => !apiIds.has(l.id));
+            if (customToMerge.length > 0) {
+              return {
+                ...prev,
+                lessons: [...prev.lessons, ...customToMerge]
+              };
+            }
+            return prev;
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
   };
 
   // Real-time server sync polling
@@ -612,8 +636,28 @@ export default function App() {
   const handleStateUpdate = async (data: any) => {
     if (!data) return;
     
-    // Explicitly bypass local storage to enforce one absolute source of truth in the cloud database
-    setAppState(data);
+    // Merge local storage lessons dynamically so they are never lost on Vercel deployments
+    const localStr = localStorage.getItem("khoahoc4_custom_lessons");
+    let mergedLessons = data.lessons || [];
+    if (localStr) {
+      try {
+        const customLessons = JSON.parse(localStr);
+        if (Array.isArray(customLessons)) {
+          const apiIds = new Set(mergedLessons.map((l: any) => l.id));
+          const customToMerge = customLessons.filter(l => !apiIds.has(l.id));
+          mergedLessons = [...mergedLessons, ...customToMerge];
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    const mergedData = {
+      ...data,
+      lessons: mergedLessons
+    };
+    
+    setAppState(mergedData);
     setIsOfflineMode(false);
     
     // Pre-fill teacher notes text if empty initially
@@ -1354,37 +1398,51 @@ export default function App() {
       return;
     }
     playClickSound();
-    try {
-      if (isOfflineMode) {
-        let newlyCreatedOffline: any = null;
-        updateOfflineState(prev => {
-          newlyCreatedOffline = {
-            id: "L_" + Date.now(),
-            title: inlineTitle,
-            type: inlineType,
-            url: inlineUrl,
-            description: inlineDescription,
-            categoryIndex: categoryIdx,
-            createdAt: new Date().toISOString(),
-            comments: [],
-            materials: []
-          };
-          const updatedLessons = [...prev.lessons, newlyCreatedOffline];
-          return { ...prev, lessons: updatedLessons };
-        });
-        
-        setInlineTitle("");
-        setInlineType("video");
-        setInlineUrl("");
-        setInlineDescription("");
-        setIsInlineAdding(false);
-        playSparkleSound();
-        if (newlyCreatedOffline) {
-          setSelectedExploreLesson(newlyCreatedOffline);
-        }
-        return;
-      }
 
+    const runOfflineSave = () => {
+      let newlyCreatedOffline: any = null;
+      updateOfflineState(prev => {
+        newlyCreatedOffline = {
+          id: "L_" + Date.now(),
+          title: inlineTitle,
+          type: inlineType,
+          url: inlineUrl,
+          description: inlineDescription,
+          categoryIndex: categoryIdx,
+          createdAt: new Date().toISOString(),
+          comments: [],
+          materials: []
+        };
+        const updatedLessons = [...prev.lessons, newlyCreatedOffline];
+        // Safely store it locally to survive Vercel clean slate environments
+        const localCustoms = localStorage.getItem("khoahoc4_custom_lessons");
+        let list = [];
+        if (localCustoms) {
+          try { list = JSON.parse(localCustoms); } catch(err) {}
+        }
+        if (!Array.isArray(list)) list = [];
+        list.push(newlyCreatedOffline);
+        localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(list));
+        return { ...prev, lessons: updatedLessons };
+      });
+      
+      setInlineTitle("");
+      setInlineType("video");
+      setInlineUrl("");
+      setInlineDescription("");
+      setIsInlineAdding(false);
+      playSparkleSound();
+      if (newlyCreatedOffline) {
+        setSelectedExploreLesson(newlyCreatedOffline);
+      }
+    };
+
+    if (isOfflineMode) {
+      runOfflineSave();
+      return;
+    }
+
+    try {
       const res = await fetch("/api/lessons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1396,8 +1454,11 @@ export default function App() {
           categoryIndex: categoryIdx
         })
       });
+      if (!res.ok) {
+        throw new Error("Vercel Serverless Write Failure - Falling back to local state");
+      }
       const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         const prevIds = new Set(appState.lessons.map(l => l.id));
         const newlyCreated = data.lessons.find((l: any) => !prevIds.has(l.id));
 
@@ -1411,9 +1472,13 @@ export default function App() {
           setSelectedExploreLesson(newlyCreated);
         }
         fetchState();
+      } else {
+        runOfflineSave();
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[Vercel Mode Fallback Activated] Saving lesson locally:", err);
+      setIsOfflineMode(true);
+      runOfflineSave();
     }
   };
 
@@ -1425,40 +1490,82 @@ export default function App() {
       return;
     }
     playClickSound();
-    try {
-      if (isOfflineMode) {
-        let newlyCreatedOffline: any = null;
-        updateOfflineState(prev => {
-          let updatedLessons;
-          if (editingLesson) {
-            updatedLessons = prev.lessons.map(l => l.id === editingLesson.id ? { ...l, title: lessonForm.title, type: lessonForm.type, url: lessonForm.url, description: lessonForm.description } : l);
-          } else {
-            newlyCreatedOffline = {
-              id: "L_" + Date.now(),
-              title: lessonForm.title,
-              type: lessonForm.type,
-              url: lessonForm.url,
-              description: lessonForm.description,
-              categoryIndex: activeCategoryIndex !== null ? activeCategoryIndex : lessonForm.categoryIndex,
-              createdAt: new Date().toISOString(),
-              comments: [],
-              materials: []
-            };
-            updatedLessons = [...prev.lessons, newlyCreatedOffline];
-          }
-          return { ...prev, lessons: updatedLessons };
-        });
-        
-        setShowAddLessonModal(false);
-        setEditingLesson(null);
-        setLessonForm({ title: "", type: "video", url: "", description: "", categoryIndex: 1 });
-        playSparkleSound();
-        if (newlyCreatedOffline) {
-          setSelectedExploreLesson(newlyCreatedOffline);
-        }
-        return;
-      }
 
+    const runOfflineSave = () => {
+      let newlyCreatedOffline: any = null;
+      updateOfflineState(prev => {
+        let updatedLessons;
+        if (editingLesson) {
+          updatedLessons = prev.lessons.map(l => l.id === editingLesson.id ? { ...l, title: lessonForm.title, type: lessonForm.type, url: lessonForm.url, description: lessonForm.description } : l);
+        } else {
+          newlyCreatedOffline = {
+            id: "L_" + Date.now(),
+            title: lessonForm.title,
+            type: lessonForm.type,
+            url: lessonForm.url,
+            description: lessonForm.description,
+            categoryIndex: activeCategoryIndex !== null ? activeCategoryIndex : lessonForm.categoryIndex,
+            createdAt: new Date().toISOString(),
+            comments: [],
+            materials: []
+          };
+          updatedLessons = [...prev.lessons, newlyCreatedOffline];
+        }
+
+        // Save customized updates to local storage
+        if (newlyCreatedOffline) {
+          const localCustoms = localStorage.getItem("khoahoc4_custom_lessons");
+          let list = [];
+          if (localCustoms) {
+            try { list = JSON.parse(localCustoms); } catch (err) {}
+          }
+          if (!Array.isArray(list)) list = [];
+          list.push(newlyCreatedOffline);
+          localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(list));
+        } else if (editingLesson) {
+          const localCustoms = localStorage.getItem("khoahoc4_custom_lessons");
+          let list = [];
+          if (localCustoms) {
+            try { list = JSON.parse(localCustoms); } catch (err) {}
+          }
+          if (Array.isArray(list)) {
+            const hasIt = list.some((l: any) => l.id === editingLesson.id);
+            if (hasIt) {
+              list = list.map((l: any) => l.id === editingLesson.id ? { ...l, title: lessonForm.title, type: lessonForm.type, url: lessonForm.url, description: lessonForm.description } : l);
+            } else {
+              // Also keep track of edit for standard items if running locally
+              list.push({
+                id: editingLesson.id,
+                title: lessonForm.title,
+                type: lessonForm.type,
+                url: lessonForm.url,
+                description: lessonForm.description,
+                categoryIndex: editingLesson.categoryIndex,
+                materials: editingLesson.materials || []
+              });
+            }
+            localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(list));
+          }
+        }
+
+        return { ...prev, lessons: updatedLessons };
+      });
+      
+      setShowAddLessonModal(false);
+      setEditingLesson(null);
+      setLessonForm({ title: "", type: "video", url: "", description: "", categoryIndex: 1 });
+      playSparkleSound();
+      if (newlyCreatedOffline) {
+        setSelectedExploreLesson(newlyCreatedOffline);
+      }
+    };
+
+    if (isOfflineMode) {
+      runOfflineSave();
+      return;
+    }
+
+    try {
       const res = await fetch("/api/lessons", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1471,8 +1578,11 @@ export default function App() {
           categoryIndex: activeCategoryIndex !== null ? activeCategoryIndex : lessonForm.categoryIndex
         })
       });
+      if (!res.ok) {
+        throw new Error("Vercel Serverless Write Failure - Falling back to local storage");
+      }
       const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         const prevIds = new Set(appState.lessons.map(l => l.id));
         const newlyCreated = data.lessons.find((l: any) => !prevIds.has(l.id));
 
@@ -1487,9 +1597,13 @@ export default function App() {
           if (updated) setSelectedExploreLesson(updated);
         }
         fetchState();
+      } else {
+        runOfflineSave();
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[Vercel Mode Fallback Activated] Saving edit/add lesson locally:", err);
+      setIsOfflineMode(true);
+      runOfflineSave();
     }
   };
 
@@ -1719,52 +1833,77 @@ export default function App() {
       return;
     }
     playClickSound();
-    try {
-      if (isOfflineMode) {
-        updateOfflineState(prev => {
-          const updatedLessons = prev.lessons.map(l => {
-            if (l.id === lessonId) {
-              const materials = l.materials || [];
-              let updatedMaterials;
-              if (editingMaterial) {
-                updatedMaterials = materials.map((m: any) => 
-                  m.id === editingMaterial.id 
-                    ? { ...m, title: materialForm.title, type: materialForm.type, url: materialForm.url, description: materialForm.description, section: materialForm.section }
-                    : m
-                );
-              } else {
-                const newM = {
-                  id: "M_" + Date.now(),
-                  title: materialForm.title,
-                  type: materialForm.type,
-                  url: materialForm.url,
-                  description: materialForm.description,
-                  section: materialForm.section || "Học tập tổng hợp 📝",
-                  createdAt: new Date().toISOString()
-                };
-                updatedMaterials = [...materials, newM];
-              }
-              return { ...l, materials: updatedMaterials };
-            }
-            return l;
-          });
-          return { ...prev, lessons: updatedLessons };
-        });
-        
-        setShowAddMaterialForm(false);
-        setEditingMaterial(null);
-        setMaterialForm({ title: "", type: "video", url: "", description: "", section: "Video bài giảng 📹" });
-        playSparkleSound();
-        setTimeout(() => {
-          setAppState(prev => {
-            const fresh = prev.lessons.find(l => l.id === lessonId);
-            if (fresh) setSelectedExploreLesson(fresh);
-            return prev;
-          });
-        }, 100);
-        return;
-      }
 
+    const runOfflineSave = () => {
+      updateOfflineState(prev => {
+        const updatedLessons = prev.lessons.map(l => {
+          if (l.id === lessonId) {
+            const materials = l.materials || [];
+            let updatedMaterials;
+            if (editingMaterial) {
+              updatedMaterials = materials.map((m: any) => 
+                m.id === editingMaterial.id 
+                  ? { ...m, title: materialForm.title, type: materialForm.type, url: materialForm.url, description: materialForm.description, section: materialForm.section }
+                  : m
+              );
+            } else {
+              const newM = {
+                id: "M_" + Date.now(),
+                title: materialForm.title,
+                type: materialForm.type,
+                url: materialForm.url,
+                description: materialForm.description,
+                section: materialForm.section || "Học tập tổng hợp 📝",
+                createdAt: new Date().toISOString()
+              };
+              updatedMaterials = [...materials, newM];
+            }
+            return { ...l, materials: updatedMaterials };
+          }
+          return l;
+        });
+
+        // Store custom state to survive cold restarts in Vercel
+        const localCustoms = localStorage.getItem("khoahoc4_custom_lessons");
+        let list = [];
+        if (localCustoms) {
+          try { list = JSON.parse(localCustoms); } catch (err) {}
+        }
+        if (!Array.isArray(list)) list = [];
+        // Update any matching lesson in our local customized list
+        const theLesson = updatedLessons.find(l => l.id === lessonId);
+        if (theLesson) {
+          const idx = list.findIndex((x: any) => x.id === lessonId);
+          if (idx !== -1) {
+            list[idx] = theLesson;
+          } else {
+            list.push(theLesson);
+          }
+          localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(list));
+        }
+
+        return { ...prev, lessons: updatedLessons };
+      });
+      
+      setShowAddMaterialForm(false);
+      setEditingMaterial(null);
+      setMaterialForm({ title: "", type: "video", url: "", description: "", section: "Video bài giảng 📹" });
+      playSparkleSound();
+      setTimeout(() => {
+        setAppState(prev => {
+          const fresh = prev.lessons.find(l => l.id === lessonId);
+          if (fresh) setSelectedExploreLesson(fresh);
+          return prev;
+        });
+      }, 100);
+    };
+
+    if (isOfflineMode) {
+      runOfflineSave();
+      return;
+    }
+
+    try {
       const res = await fetch(`/api/lessons/${lessonId}/materials`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1777,16 +1916,23 @@ export default function App() {
           section: materialForm.section
         })
       });
+      if (!res.ok) {
+        throw new Error("Vercel Serverless material save failure");
+      }
       const data = await res.json();
-      if (data.success) {
+      if (data && data.success) {
         setShowAddMaterialForm(false);
         setEditingMaterial(null);
         setMaterialForm({ title: "", type: "video", url: "", description: "", section: "Video bài giảng 📹" });
         playSparkleSound();
         fetchState();
+      } else {
+        runOfflineSave();
       }
     } catch (err) {
-      console.error(err);
+      console.warn("[Vercel Mode Fallback Activated] Saving material locally:", err);
+      setIsOfflineMode(true);
+      runOfflineSave();
     }
   };
 
@@ -1856,6 +2002,18 @@ export default function App() {
         const filtered = (prev.lessons || []).filter(l => l.id !== id);
         return { ...prev, lessons: filtered };
       });
+
+      // Update local storage so merged lessons never show the deleted item
+      const localCustoms = localStorage.getItem("khoahoc4_custom_lessons");
+      if (localCustoms) {
+        try {
+          const list = JSON.parse(localCustoms);
+          if (Array.isArray(list)) {
+            const updatedList = list.filter((l: any) => l.id !== id);
+            localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(updatedList));
+          }
+        } catch (err) {}
+      }
 
       try {
         const res = await fetch(`/api/lessons/${id}`, { method: "DELETE" });
