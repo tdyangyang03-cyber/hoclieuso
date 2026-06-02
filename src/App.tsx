@@ -683,8 +683,9 @@ export default function App() {
   useEffect(() => {
     if (isOfflineMode) return;
 
-    console.log("[Firebase Realtime] Subscribing via onSnapshot to app/state...");
-    const docRef = doc(db, "app", "state");
+    const GLOBAL_CLASS_ID = "khoahoc4_chung";
+    console.log(`[Firebase Realtime] Subscribing via onSnapshot to classes/${GLOBAL_CLASS_ID}...`);
+    const docRef = doc(db, "classes", GLOBAL_CLASS_ID);
 
     const unsubscribe = onSnapshot(docRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -692,11 +693,11 @@ export default function App() {
         console.log("[Firebase Realtime] Received state snapshot update:", data);
         handleStateUpdate(data);
       } else {
-        console.warn("[Firebase Realtime] State document does not exist yet.");
+        console.warn(`[Firebase Realtime] State document for ${GLOBAL_CLASS_ID} does not exist yet.`);
       }
     }, (error) => {
       console.error("[Firebase Realtime] onSnapshot subscription failure:", error);
-      handleFirestoreError(error, OperationType.GET, "app/state");
+      handleFirestoreError(error, OperationType.GET, `classes/${GLOBAL_CLASS_ID}`);
     });
 
     // Run fallback cache-busted REST client polling loop every 8 seconds as robust backup

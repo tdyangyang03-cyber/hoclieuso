@@ -242,21 +242,23 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 const STATE_FILE_PATH = process.env.VERCEL ? "/tmp/khoahoc4_state.json" : path.join(process.cwd(), "state.json");
 
+const GLOBAL_CLASS_ID = "khoahoc4_chung";
+
 async function getRemoteState() {
   if (!firestoreDb) return null;
   try {
-    const docRef = doc(firestoreDb, "app", "state");
+    const docRef = doc(firestoreDb, "classes", GLOBAL_CLASS_ID);
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
       return snapshot.data();
     } else {
-      console.log("[Firebase Server] App state doc not found, seeding with initial state.");
+      console.log(`[Firebase Server] App state doc not found for ${GLOBAL_CLASS_ID}, seeding with initial state.`);
       await setDoc(docRef, state);
       return state;
     }
   } catch (err) {
-    console.error("[Firebase Server] Error getting remote state:", err);
-    handleFirestoreError(err, OperationType.GET, "app/state");
+    console.error(`[Firebase Server] Error getting remote state for ${GLOBAL_CLASS_ID}:`, err);
+    handleFirestoreError(err, OperationType.GET, `classes/${GLOBAL_CLASS_ID}`);
     return null;
   }
 }
@@ -264,12 +266,12 @@ async function getRemoteState() {
 async function saveRemoteState(newState: any) {
   if (!firestoreDb) return;
   try {
-    const docRef = doc(firestoreDb, "app", "state");
+    const docRef = doc(firestoreDb, "classes", GLOBAL_CLASS_ID);
     await setDoc(docRef, newState);
-    console.log("[Firebase Server] Successfully saved state to Firestore document 'app/state'.");
+    console.log(`[Firebase Server] Successfully saved state to Firestore document 'classes/${GLOBAL_CLASS_ID}'.`);
   } catch (err) {
-    console.error("[Firebase Server] Error saving remote state:", err);
-    handleFirestoreError(err, OperationType.WRITE, "app/state");
+    console.error(`[Firebase Server] Error saving remote state for ${GLOBAL_CLASS_ID}:`, err);
+    handleFirestoreError(err, OperationType.WRITE, `classes/${GLOBAL_CLASS_ID}`);
   }
 }
 

@@ -6,8 +6,13 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // 2. Application state synchronization path
+    // 2. Legacy state synchronization path
     match /app/state {
+      allow read, write: if true;
+    }
+
+    // 3. Global Single Classroom "khoahoc4_chung" path
+    match /classes/khoahoc4_chung {
       allow read, write: if true;
     }
   }

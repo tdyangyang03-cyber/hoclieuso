@@ -23,9 +23,13 @@
     }
   },
   "firestore": {
-    "app/state": {
+    "classes/khoahoc4_chung": {
       "schema": "AppState",
       "description": "Global application state doc"
+    },
+    "app/state": {
+      "schema": "AppState",
+      "description": "Legacy application state doc"
     }
   }
 }
