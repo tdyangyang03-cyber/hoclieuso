@@ -203,9 +203,24 @@ function savePersistedState() {
   try {
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
     console.log("[Persistence System] Persisted state successfully to:", STATE_FILE_PATH);
+    broadcastState();
   } catch (err) {
     console.error("[Persistence System] Critical error while writing persisted state:", err);
   }
+}
+
+// --- REAL-TIME STREAMING BROADCAST ENGINE (SSE) ---
+let sseClients: any[] = [];
+
+function broadcastState() {
+  const dataStr = JSON.stringify(state);
+  sseClients.forEach(client => {
+    try {
+      client.write(`data: ${dataStr}\n\n`);
+    } catch (e) {
+      // dead stream ignored
+    }
+  });
 }
 
 // Automatically load state on application boot
@@ -310,7 +325,27 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
 
 // REST APIs
 app.get("/api/state", (req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
   res.json(state);
+});
+
+app.get("/api/state/stream", (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Connection", "keep-alive");
+
+  // Push initial state
+  res.write(`data: ${JSON.stringify(state)}\n\n`);
+
+  sseClients.push(res);
+
+  req.on("close", () => {
+    sseClients = sseClients.filter(client => client !== res);
+  });
 });
 
 app.post("/api/active-session", (req, res) => {

@@ -629,16 +629,186 @@ export default function App() {
     isScreenSyncedRef.current = isScreenSynced;
   }, [isScreenSynced]);
 
-  // Real-time server sync polling
+  // Real-time server sync listener (SSE with query-parameter cache-busting fallback)
   useEffect(() => {
+    if (isOfflineMode) return;
+
+    let eventSource: EventSource | null = null;
+    let fallbackInterval: any = null;
+
+    const connectRealtime = () => {
+      try {
+        console.log("[Realtime Stream] Connecting to SSE stream...");
+        eventSource = new EventSource("/api/state/stream");
+
+        eventSource.onopen = () => {
+          console.log("[Realtime Stream] Connected to SSE stream successfully.");
+          if (fallbackInterval) {
+            clearInterval(fallbackInterval);
+            fallbackInterval = null;
+          }
+        };
+
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data) {
+              handleStateUpdate(data);
+            }
+          } catch (err) {
+            console.warn("[Realtime Stream] Error parsing SSE message:", err);
+          }
+        };
+
+        eventSource.onerror = (err) => {
+          console.warn("[Realtime Stream] SSE connection error/disconnected, falling back to polling.", err);
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          if (!fallbackInterval) {
+            fallbackInterval = setInterval(fetchState, 3000);
+          }
+        };
+      } catch (e) {
+        console.warn("[Realtime Stream] EventSource initialization failed, using polling.", e);
+        if (!fallbackInterval) {
+          fallbackInterval = setInterval(fetchState, 3000);
+        }
+      }
+    };
+
+    connectRealtime();
+
+    // Start fallback polling initially as well for solid robustness
+    fallbackInterval = setInterval(fetchState, 3000);
     fetchState();
-    const interval = setInterval(fetchState, 3000);
-    return () => clearInterval(interval);
+
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+      }
+      if (fallbackInterval) {
+        clearInterval(fallbackInterval);
+      }
+    };
   }, [isOfflineMode]);
+
+  const handleStateUpdate = async (data: any) => {
+    if (!data) return;
+    // Smart session synchronizer to survive Cloud Run server context restarts without state loss
+    let merged = data;
+    const local = localStorage.getItem("khoahoc4_state");
+    if (local) {
+      try {
+        const parsedLocal = JSON.parse(local);
+        if (parsedLocal) {
+          // Server is in pristine/default seed status if it has exactly its initial seed events
+          const isServerSeedState = 
+            data.lessons && 
+            data.lessons.length === 2 && 
+            data.lessons.some((l: any) => l.id === "L1") && 
+            data.lessons.some((l: any) => l.id === "L2") &&
+            data.parentFeedback &&
+            data.parentFeedback.length === 1 &&
+            data.parentFeedback[0]?.id === "f1" &&
+            (!data.workbookSubmissions || data.workbookSubmissions.length === 0);
+
+          // Client contains custom modifications/additions that should be preserved on restart
+          const clientHasCustomData = 
+            (parsedLocal.lessons && parsedLocal.lessons.length > 2) ||
+            (parsedLocal.lessons && parsedLocal.lessons.some((l: any) => l.id !== "L1" && l.id !== "L2")) ||
+            (parsedLocal.parentFeedback && parsedLocal.parentFeedback.length > 1) ||
+            (parsedLocal.workbookSubmissions && parsedLocal.workbookSubmissions.length > 0) ||
+            (parsedLocal.mindmapSubmissions && parsedLocal.mindmapSubmissions.length > 0) ||
+            (parsedLocal.students && parsedLocal.students.length > 2);
+
+          // ONLY allow 'teacher' to restore backup state to prevent students from overwriting DB with stale local backup
+          if (currentRoleRef.current === 'teacher' && isServerSeedState && clientHasCustomData) {
+            // Server restarted or state cleared: push client's backup state to restore online database
+            const resRestore = await fetch("/api/state/restore", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(parsedLocal)
+            });
+            const restoreData = await resRestore.json();
+            if (restoreData.success) {
+              merged = restoreData.state;
+            }
+          } else {
+            // Server is running lively as absolute source of truth. Take latest edits, creations, or deletions directly!
+            merged = data;
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage state synchronizer warning:", err);
+        merged = data;
+      }
+    }
+
+    setAppState(merged);
+    localStorage.setItem("khoahoc4_state", JSON.stringify(merged));
+    setIsOfflineMode(false);
+    // Pre-fill teacher notes text if empty initially
+    if (merged.teacherNotes && merged.teacherNotes[0]) {
+      setNoteInputValue(merged.teacherNotes[0].content);
+    }
+    
+    // Active presentation and routing synchronizer for students/parents based on teacher adjustments
+    const currentRoleVal = currentRoleRef.current;
+    const isScreenSyncedVal = isScreenSyncedRef.current;
+    
+    if (isScreenSyncedVal && (currentRoleVal === 'student' || currentRoleVal === 'parent')) {
+      if (merged.activeLessonId) {
+        const freshLesson = merged.lessons?.find((l: any) => l.id === merged.activeLessonId);
+        if (freshLesson) {
+          const currentSelLessonId = activeLessonIdRef.current;
+          if (!currentSelLessonId || currentSelLessonId !== merged.activeLessonId) {
+            setSelectedExploreLesson(freshLesson);
+          }
+          if (merged.activeFolder && activeFolderRef.current !== merged.activeFolder) {
+            setActiveFolder(merged.activeFolder);
+          }
+          if (merged.activeMaterialId) {
+            const freshMat = freshLesson.materials?.find((m: any) => m.id === merged.activeMaterialId);
+            if (freshMat && (!activeMaterialIdRef.current || activeMaterialIdRef.current !== merged.activeMaterialId)) {
+              setActiveMaterial(freshMat);
+            }
+          }
+        }
+      } else {
+        if (activeLessonIdRef.current) {
+          setSelectedExploreLesson(null);
+          setActiveMaterial(null);
+        }
+      }
+
+      if (merged.activeSubTab) {
+        setStudentActiveTab("materials");
+        setStudentMaterialSubTab(merged.activeSubTab);
+      }
+    } else {
+      // Sync open lesson detail dynamically if working separately or manually
+      const currentSelLessonId = activeLessonIdRef.current;
+      if (currentSelLessonId) {
+        const fresh = merged.lessons?.find((l: any) => l.id === currentSelLessonId);
+        if (fresh) {
+          setSelectedExploreLesson(fresh);
+        }
+      }
+    }
+  };
 
   const fetchState = async () => {
     try {
-      const res = await fetch("/api/state");
+      // Force non-cached, fresh, absolute live data by appending timestamp parameter and no-cache flags
+      const res = await fetch(`/api/state?_t=${Date.now()}`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+          "Pragma": "no-cache"
+        }
+      });
       if (!res.ok) {
         useOfflineFallback();
         return;
@@ -651,107 +821,7 @@ export default function App() {
       }
       const data = await res.json();
       if (data) {
-        // Smart session synchronizer to survive Cloud Run server context restarts without state loss
-        let merged = data;
-        const local = localStorage.getItem("khoahoc4_state");
-        if (local) {
-          try {
-            const parsedLocal = JSON.parse(local);
-            if (parsedLocal) {
-              // Server is in pristine/default seed status if it has exactly its initial seed events
-              const isServerSeedState = 
-                data.lessons && 
-                data.lessons.length === 2 && 
-                data.lessons.some((l: any) => l.id === "L1") && 
-                data.lessons.some((l: any) => l.id === "L2") &&
-                data.parentFeedback &&
-                data.parentFeedback.length === 1 &&
-                data.parentFeedback[0]?.id === "f1" &&
-                (!data.workbookSubmissions || data.workbookSubmissions.length === 0);
-
-              // Client contains custom modifications/additions that should be preserved on restart
-              const clientHasCustomData = 
-                (parsedLocal.lessons && parsedLocal.lessons.length > 2) ||
-                (parsedLocal.lessons && parsedLocal.lessons.some((l: any) => l.id !== "L1" && l.id !== "L2")) ||
-                (parsedLocal.parentFeedback && parsedLocal.parentFeedback.length > 1) ||
-                (parsedLocal.workbookSubmissions && parsedLocal.workbookSubmissions.length > 0) ||
-                (parsedLocal.mindmapSubmissions && parsedLocal.mindmapSubmissions.length > 0) ||
-                (parsedLocal.students && parsedLocal.students.length > 2);
-
-              // ONLY allow 'teacher' to restore backup state to prevent students from overwriting DB with stale local backup
-              if (currentRoleRef.current === 'teacher' && isServerSeedState && clientHasCustomData) {
-                // Server restarted or state cleared: push client's backup state to restore online database
-                const resRestore = await fetch("/api/state/restore", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(parsedLocal)
-                });
-                const restoreData = await resRestore.json();
-                if (restoreData.success) {
-                  merged = restoreData.state;
-                }
-              } else {
-                // Server is running lively as absolute source of truth. Take latest edits, creations, or deletions directly!
-                merged = data;
-              }
-            }
-          } catch (err) {
-            console.warn("Local storage state synchronizer warning:", err);
-            merged = data;
-          }
-        }
-
-        setAppState(merged);
-        localStorage.setItem("khoahoc4_state", JSON.stringify(merged));
-        setIsOfflineMode(false);
-        // Pre-fill teacher notes text if empty initially
-        if (merged.teacherNotes && merged.teacherNotes[0]) {
-          setNoteInputValue(merged.teacherNotes[0].content);
-        }
-        
-        // Active presentation and routing synchronizer for students/parents based on teacher adjustments
-        const currentRoleVal = currentRoleRef.current;
-        const isScreenSyncedVal = isScreenSyncedRef.current;
-        
-        if (isScreenSyncedVal && (currentRoleVal === 'student' || currentRoleVal === 'parent')) {
-          if (merged.activeLessonId) {
-            const freshLesson = merged.lessons?.find((l: any) => l.id === merged.activeLessonId);
-            if (freshLesson) {
-              const currentSelLessonId = activeLessonIdRef.current;
-              if (!currentSelLessonId || currentSelLessonId !== merged.activeLessonId) {
-                setSelectedExploreLesson(freshLesson);
-              }
-              if (merged.activeFolder && activeFolderRef.current !== merged.activeFolder) {
-                setActiveFolder(merged.activeFolder);
-              }
-              if (merged.activeMaterialId) {
-                const freshMat = freshLesson.materials?.find((m: any) => m.id === merged.activeMaterialId);
-                if (freshMat && (!activeMaterialIdRef.current || activeMaterialIdRef.current !== merged.activeMaterialId)) {
-                  setActiveMaterial(freshMat);
-                }
-              }
-            }
-          } else {
-            if (activeLessonIdRef.current) {
-              setSelectedExploreLesson(null);
-              setActiveMaterial(null);
-            }
-          }
-
-          if (merged.activeSubTab) {
-            setStudentActiveTab("materials");
-            setStudentMaterialSubTab(merged.activeSubTab);
-          }
-        } else {
-          // Sync open lesson detail dynamically if working separately or manually
-          const currentSelLessonId = activeLessonIdRef.current;
-          if (currentSelLessonId) {
-            const fresh = merged.lessons?.find((l: any) => l.id === currentSelLessonId);
-            if (fresh) {
-              setSelectedExploreLesson(fresh);
-            }
-          }
-        }
+        handleStateUpdate(data);
       }
     } catch (e) {
       // Quietly fall back without firing console.error to avoid error trackers capturing transient dev server restarts
