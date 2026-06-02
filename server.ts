@@ -179,7 +179,8 @@ let state = {
   activeLessonId: null as string | null,
   activeFolder: null as string | null,
   activeMaterialId: null as string | null,
-  activeSubTab: null as string | null
+  activeSubTab: null as string | null,
+  lastUpdated: Date.now()
 };
 
 // --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL, CONTAINERS & ROBUST STATE ---
@@ -287,10 +288,12 @@ async function saveKVDBState(newState: any) {
 }
 
 let lastCloudFetchTime = 0;
+let isBootSyncComplete = false;
+
 async function syncFromCloudIfNeeded() {
   if (!db) return;
   const now = Date.now();
-  if (now - lastCloudFetchTime > 1500) { // Keep cache fresh up to 1.5s
+  if (now - lastCloudFetchTime > 1500 || !isBootSyncComplete) { // Keep cache fresh up to 1.5s
     lastCloudFetchTime = now;
     try {
       const docRef = doc(db, "app_state", "classroom_state");
@@ -298,13 +301,49 @@ async function syncFromCloudIfNeeded() {
       if (docSnap.exists()) {
         const data = docSnap.data();
         if (data && data.state && Array.isArray(data.state.lessons)) {
-          state = { ...state, ...data.state };
-          console.log("[Firebase Sync] Pulled live classroom state from Cloud. Lessons count:", state.lessons?.length);
+          const dbLastUpdated = data.state.lastUpdated || 0;
+          const localLastUpdated = state.lastUpdated || 0;
+          
+          if (!isBootSyncComplete || dbLastUpdated > localLastUpdated) {
+            state = { ...state, ...data.state };
+            console.log("[Firebase Sync] Pulled live classroom state from Cloud. Lessons count:", state.lessons?.length, "local timestamp:", localLastUpdated, "db timestamp:", dbLastUpdated);
+          } else {
+            console.log("[Firebase Sync Bypass] Local in-memory state is newer (local:", localLastUpdated, "db:", dbLastUpdated, "). Ignoring cloud pull.");
+          }
+          isBootSyncComplete = true;
         }
+      } else {
+        // Document doesn't exist yet, mark boot sync as complete
+        isBootSyncComplete = true;
       }
     } catch (err) {
       console.error("[Firebase Sync Error] Cannot GET state from Cloud Firestore:", err);
     }
+  }
+}
+
+async function pullFromCloudForced() {
+  if (!db) return;
+  try {
+    const docRef = doc(db, "app_state", "classroom_state");
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      if (data && data.state && Array.isArray(data.state.lessons)) {
+        const dbLastUpdated = data.state.lastUpdated || 0;
+        const localLastUpdated = state.lastUpdated || 0;
+        
+        // Force sync any newer database state into memory to prevent stale clobbering
+        if (dbLastUpdated > localLastUpdated) {
+          state = { ...state, ...data.state };
+          console.log("[Firebase Forced Sync] Successfully merged newer database state from Cloud (db: " + dbLastUpdated + ", jackpot: " + localLastUpdated + ").");
+        } else {
+          console.log("[Firebase Forced Sync Bypass] Local state is already newest (db: " + dbLastUpdated + ", jackpot: " + localLastUpdated + ").");
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Firebase Forced Sync Error] Failed to get latest state before mutation:", err);
   }
 }
 
@@ -334,6 +373,7 @@ function loadPersistedState() {
 
 function savePersistedState() {
   try {
+    state.lastUpdated = Date.now();
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
     console.log("[Persistence System] Persisted state successfully to local state.json file:", STATE_FILE_PATH);
     broadcastState();
@@ -381,6 +421,19 @@ if (supabase) {
     console.error("[Supabase System Boot Sync Error]:", e);
   });
 }
+
+// Pre-Sync Middleware: For all state-mutating requests, force pull latest state from Firestore first
+// to guarantee the route handler mutates the absolute latest DB state and avoids stale clobbering.
+app.use(async (req: any, res: any, next: any) => {
+  if (req.method !== "GET" && req.path !== "/api/chat" && req.path !== "/api/upload") {
+    try {
+      await pullFromCloudForced();
+    } catch (e) {
+      console.error("[Pre-mutation Sync Error] Failed to force sync Firestore state:", e);
+    }
+  }
+  next();
+});
 
 // Express Response Interceptor Middleware to capture any State Mutations & backup to Firestore/local files
 app.use((req: any, res: any, next: any) => {

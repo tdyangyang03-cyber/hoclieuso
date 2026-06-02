@@ -598,6 +598,7 @@ export default function App() {
   const activeMaterialIdRef = React.useRef<string | null>(null);
   const currentRoleRef = React.useRef<string>("login");
   const isScreenSyncedRef = React.useRef<boolean>(true);
+  const syncingLessonIdsRef = React.useRef<Set<string>>(new Set());
 
   React.useEffect(() => {
     activeLessonIdRef.current = selectedExploreLesson?.id || null;
@@ -649,15 +650,18 @@ export default function App() {
 
           // Auto-sync any unsynced or modified offline lessons/materials to server so other users can see them!
           const dbLessons = data.lessons || [];
-          const lessonsToKeep: any[] = [];
-          const lessonsToSync: any[] = [];
 
           for (const localLesson of customLessons) {
+            // Keep in local storage and do not sync again if already in of flight
+            if (syncingLessonIdsRef.current.has(localLesson.id)) {
+              continue;
+            }
+
             const dbMatch = dbLessons.find((dbL: any) => dbL.id === localLesson.id);
+            let needsSync = false;
+
             if (!dbMatch) {
-              // Not in database at all -> must sync
-              lessonsToSync.push(localLesson);
-              lessonsToKeep.push(localLesson);
+              needsSync = true;
             } else {
               // Exists in database, check if mismatch (edited title/description or different materials)
               const localMaterials = localLesson.materials || [];
@@ -682,42 +686,62 @@ export default function App() {
               }
 
               if (isTitleDiff || isDescDiff || isTypeDiff || isMaterialsCountDiff || isMaterialsContentDiff) {
-                console.log(`[Sync Engine] Mismatch found for lesson ${localLesson.id} "${localLesson.title}". Will sync local changes to cloud.`);
-                lessonsToSync.push(localLesson);
-                lessonsToKeep.push(localLesson);
-              } else {
-                // Completely identical -> No need to keep in local storage or sync! (Safe to prune from local storage since the server has a perfect copy)
+                needsSync = true;
               }
             }
-          }
 
-          // Save cleaned-up array back to local storage
-          if (lessonsToKeep.length !== customLessons.length) {
-            localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(lessonsToKeep));
-          }
-
-          if (lessonsToSync.length > 0) {
-            console.log(`[Sync Engine] Found ${lessonsToSync.length} unsynced/modified local lessons. Synchronizing to cloud...`);
-            for (const lesson of lessonsToSync) {
+            if (needsSync) {
+              // Lock lesson ID from concurrent sync attempts
+              syncingLessonIdsRef.current.add(localLesson.id);
+              console.log(`[Sync Engine] Mismatch or unsynced lesson found for ${localLesson.id} "${localLesson.title}". Synchronizing to cloud...`);
+              
               fetch("/api/lessons", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                  id: lesson.id,
-                  categoryIndex: lesson.categoryIndex,
-                  title: lesson.title,
-                  type: lesson.type,
-                  url: lesson.url,
-                  description: lesson.description || "",
-                  materials: lesson.materials || []
+                  id: localLesson.id,
+                  categoryIndex: localLesson.categoryIndex,
+                  title: localLesson.title,
+                  type: localLesson.type,
+                  url: localLesson.url,
+                  description: localLesson.description || "",
+                  materials: localLesson.materials || []
                 })
               }).then(res => {
                 if (res.ok) {
-                  console.log(`[Sync Engine] Successfully synchronized lesson to cloud: ${lesson.title}`);
+                  console.log(`[Sync Engine] Successfully synchronized lesson to cloud: ${localLesson.title}`);
+                  // Safely and transactionally prune only AFTER verified successful sync!
+                  const newestLocalStr = localStorage.getItem("khoahoc4_custom_lessons");
+                  if (newestLocalStr) {
+                    try {
+                      const curList = JSON.parse(newestLocalStr);
+                      if (Array.isArray(curList)) {
+                        const updatedList = curList.filter((x: any) => x.id !== localLesson.id);
+                        localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(updatedList));
+                      }
+                    } catch (err) {}
+                  }
+                } else {
+                  console.error(`[Sync Engine Error] Server rejected synchronization for lesson: ${localLesson.title}`);
                 }
               }).catch(err => {
-                console.error("[Sync Engine Error] Failed to upload lesson to cloud:", err);
+                console.error("[Sync Engine Error] Failed to upload lesson to cloud due to network error:", err);
+              }).finally(() => {
+                // Release lock
+                syncingLessonIdsRef.current.delete(localLesson.id);
               });
+            } else {
+              // Perfectly identical and available on Cloud: Safe to clear from local storage now
+              const newestLocalStr = localStorage.getItem("khoahoc4_custom_lessons");
+              if (newestLocalStr) {
+                try {
+                  const curList = JSON.parse(newestLocalStr);
+                  if (Array.isArray(curList)) {
+                    const updatedList = curList.filter((x: any) => x.id !== localLesson.id);
+                    localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(updatedList));
+                  }
+                } catch (err) {}
+              }
             }
           }
         }
