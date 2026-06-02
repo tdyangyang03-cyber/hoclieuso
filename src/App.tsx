@@ -1437,11 +1437,6 @@ export default function App() {
       }
     };
 
-    if (isOfflineMode) {
-      runOfflineSave();
-      return;
-    }
-
     try {
       const res = await fetch("/api/lessons", {
         method: "POST",
@@ -1559,11 +1554,6 @@ export default function App() {
         setSelectedExploreLesson(newlyCreatedOffline);
       }
     };
-
-    if (isOfflineMode) {
-      runOfflineSave();
-      return;
-    }
 
     try {
       const res = await fetch("/api/lessons", {
@@ -1897,11 +1887,6 @@ export default function App() {
         });
       }, 100);
     };
-
-    if (isOfflineMode) {
-      runOfflineSave();
-      return;
-    }
 
     try {
       const res = await fetch(`/api/lessons/${lessonId}/materials`, {

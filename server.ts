@@ -3,6 +3,8 @@ import path from "path";
 import dotenv from "dotenv";
 import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, getDoc, setDoc } from "firebase/firestore";
 import { createServer as createViteServer } from "vite";
 import { createClient } from "@supabase/supabase-js";
 
@@ -249,6 +251,63 @@ async function saveSupabaseState(newState: any) {
   }
 }
 
+// --- FIREBASE CLOUD SYNCHRONIZATION FOR VERCEL STATE RESILIENCY ---
+let firebaseConfigObj: any = null;
+let fbApp: any = null;
+let db: any = null;
+
+try {
+  const configPath = path.join(process.cwd(), "firebase-applet-config.json");
+  if (fs.existsSync(configPath)) {
+    const rawConfig = fs.readFileSync(configPath, "utf-8");
+    firebaseConfigObj = JSON.parse(rawConfig);
+    fbApp = initializeApp(firebaseConfigObj);
+    db = getFirestore(fbApp, firebaseConfigObj.firestoreDatabaseId);
+    console.log("[Firebase Config] Successfully initialized Firestore under project:", firebaseConfigObj.projectId);
+  } else {
+    console.error("[Firebase Config Error] firebase-applet-config.json not found!");
+  }
+} catch (err) {
+  console.error("[Firebase Initialization Exception]:", err);
+}
+
+async function saveKVDBState(newState: any) {
+  if (!db) {
+    console.warn("[Firebase Sync Warning] Cannot save because database is not initialized.");
+    return;
+  }
+  try {
+    const docRef = doc(db, "app_state", "classroom_state");
+    const cleanState = JSON.parse(JSON.stringify(newState));
+    await setDoc(docRef, { state: cleanState, updated_at: new Date().toISOString() });
+    console.log("[Firebase Sync] State backed up to Cloud Firestore successfully.");
+  } catch (err) {
+    console.error("[Firebase Sync Error] Cannot save state to Firestore:", err);
+  }
+}
+
+let lastCloudFetchTime = 0;
+async function syncFromCloudIfNeeded() {
+  if (!db) return;
+  const now = Date.now();
+  if (now - lastCloudFetchTime > 1500) { // Keep cache fresh up to 1.5s
+    lastCloudFetchTime = now;
+    try {
+      const docRef = doc(db, "app_state", "classroom_state");
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        if (data && data.state && Array.isArray(data.state.lessons)) {
+          state = { ...state, ...data.state };
+          console.log("[Firebase Sync] Pulled live classroom state from Cloud. Lessons count:", state.lessons?.length);
+        }
+      }
+    } catch (err) {
+      console.error("[Firebase Sync Error] Cannot GET state from Cloud Firestore:", err);
+    }
+  }
+}
+
 function loadPersistedState() {
   try {
     if (fs.existsSync(STATE_FILE_PATH)) {
@@ -264,6 +323,13 @@ function loadPersistedState() {
   } catch (err) {
     console.error("[Persistence System] Critical error while reading persisted state:", err);
   }
+
+  // Check and seed state from the cloud bucket asynchronously on server ignition
+  syncFromCloudIfNeeded().then(() => {
+    console.log("[Firebase Boot Sync] Cloud bootstrap sync checked.");
+  }).catch(e => {
+    console.error("[Firebase Boot Sync Exception]:", e);
+  });
 }
 
 function savePersistedState() {
@@ -271,6 +337,9 @@ function savePersistedState() {
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
     console.log("[Persistence System] Persisted state successfully to local state.json file:", STATE_FILE_PATH);
     broadcastState();
+    
+    // Save to our ultra-reliable Cloud Firebase Firestore collection asynchronously
+    saveKVDBState(state).catch(err => console.error("Async Firebase Cloud save failed:", err));
     
     // Save to Supabase Singapore so other instances, mobile phones and dashboards sync instantly
     if (supabase) {
@@ -415,6 +484,9 @@ app.get("/api/state", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+
+  // Dynamically sync state from the Cloud Store to maintain absolute consistency
+  await syncFromCloudIfNeeded();
 
   if (supabase) {
     try {
