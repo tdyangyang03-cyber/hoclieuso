@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createServer as createViteServer } from "vite";
+import { createClient } from "@supabase/supabase-js";
 
 dotenv.config();
 
@@ -182,6 +183,85 @@ let state = {
 // --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL, CONTAINERS & ROBUST STATE ---
 const STATE_FILE_PATH = process.env.VERCEL ? "/tmp/khoahoc4_state.json" : path.join(process.cwd(), "state.json");
 
+// --- SUPABASE CLIENT INITIALIZATION ---
+// Automatically detect Supabase environment variables configured by Supabase / Vercel integrations
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+let supabase: any = null;
+
+if (supabaseUrl && supabaseKey) {
+  try {
+    supabase = createClient(supabaseUrl, supabaseKey);
+    console.log("[Supabase System] Connected to Supabase Workspace with URL:", supabaseUrl);
+  } catch (err) {
+    console.error("[Supabase System] Connection initialization failed:", err);
+  }
+} else {
+  console.log("[Supabase System] WARNING: Supabase environment variables are missing. Relying on local runtime and file system persistence.");
+}
+
+async function fetchSupabaseState() {
+  if (!supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("classroom_state")
+      .select("state")
+      .eq("id", "lop4")
+      .maybeSingle();
+
+    if (error) {
+      if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+        console.log("\n============================= SUPABASE TABLE SETUP GUIDE =============================\n" +
+          "Bảng 'classroom_state' chưa tồn tại trên cơ sở dữ liệu Supabase 'supabase-sky-car'.\n" +
+          "Bạn chỉ cần sao chép lệnh SQL dưới đây và dán vào Supabase Dashboard -> SQL Editor để tạo nhanh bảng:\n\n" +
+          "CREATE TABLE IF NOT EXISTS classroom_state (\n" +
+          "  id TEXT PRIMARY KEY,\n" +
+          "  state JSONB,\n" +
+          "  updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())\n" +
+          ");\n" +
+          "ALTER TABLE classroom_state ENABLE ROW LEVEL SECURITY;\n" +
+          "CREATE POLICY \"Allow public access\" ON classroom_state FOR ALL USING (true) WITH CHECK (true);\n" +
+          "=================================================================================\n"
+        );
+        (state as any).supabaseError = "TABLE_MISSING";
+      } else {
+        console.log("[Supabase System Sync Notification]:", error.message);
+      }
+      return null;
+    }
+
+    if (data && data.state) {
+      (state as any).supabaseError = null;
+      return data.state;
+    }
+  } catch (err) {
+    console.log("[Supabase System Sync Exception Handled]:", err);
+  }
+  return null;
+}
+
+async function saveSupabaseState(newState: any) {
+  if (!supabase) return;
+  try {
+    const { error } = await supabase
+      .from("classroom_state")
+      .upsert({ id: "lop4", state: newState, updated_at: new Date().toISOString() });
+
+    if (error) {
+       if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+         (state as any).supabaseError = "TABLE_MISSING";
+       } else {
+         console.log("[Supabase System Save Notification]:", error.message);
+       }
+    } else {
+       (state as any).supabaseError = null;
+       console.log("[Supabase System] State successfully synchronized and backed up to Supabase Singapore Cloud Replica.");
+    }
+  } catch (err) {
+    console.log("[Supabase System Save Exception Handled]:", err);
+  }
+}
+
 function loadPersistedState() {
   try {
     if (fs.existsSync(STATE_FILE_PATH)) {
@@ -204,6 +284,11 @@ function savePersistedState() {
     fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(state, null, 2), "utf-8");
     console.log("[Persistence System] Persisted state successfully to local state.json file:", STATE_FILE_PATH);
     broadcastState();
+    
+    // Save to Supabase Singapore so other instances, mobile phones and dashboards sync instantly
+    if (supabase) {
+      saveSupabaseState(state);
+    }
   } catch (err) {
     console.error("[Persistence System] Critical error while writing persisted state:", err);
   }
@@ -223,8 +308,23 @@ function broadcastState() {
   });
 }
 
-// Automatically load state on application boot
+// Automatically load local state on application boot
 loadPersistedState();
+
+// Initialize remote Cloud State Sync upon boot with SupabaseSingapore
+if (supabase) {
+  fetchSupabaseState().then(remoteState => {
+    if (remoteState) {
+      state = { ...state, ...remoteState };
+      console.log("[Supabase System] Synchronized and loaded in-memory state with Supabase cloud database.");
+    } else {
+      console.log("[Supabase System] First-time cloud sync seeding 'lop4' starting state to Supabase Singapore.");
+      saveSupabaseState(state);
+    }
+  }).catch(e => {
+    console.error("[Supabase System Boot Sync Error]:", e);
+  });
+}
 
 // Express Response Interceptor Middleware to capture any State Mutations & backup to Firestore/local files
 app.use((req: any, res: any, next: any) => {

@@ -153,4 +153,5 @@ export interface AppState {
   activeFolder?: string | null;
   activeMaterialId?: string | null;
   activeSubTab?: string | null;
+  supabaseError?: string | null;
 }
