@@ -573,7 +573,7 @@ app.post("/api/lessons", async (req, res) => {
   let targetLesson: any = null;
   
   if (id) {
-    // Edit existing
+    // Edit existing or create new with specified ID (for syncing offline lessons)
     const index = state.lessons.findIndex(l => l.id === id);
     if (index !== -1) {
       state.lessons[index] = { 
@@ -585,6 +585,20 @@ app.post("/api/lessons", async (req, res) => {
         materials: materials || state.lessons[index].materials || []
       };
       targetLesson = state.lessons[index];
+    } else {
+      const newLesson = {
+        id: id,
+        categoryIndex: Number(categoryIndex !== undefined ? categoryIndex : 1),
+        title,
+        type: type || "video",
+        url: url || "",
+        description: description || "",
+        createdAt: new Date().toISOString(),
+        comments: [],
+        materials: materials || []
+      };
+      state.lessons.push(newLesson);
+      targetLesson = newLesson;
     }
   } else {
     // Brand new item

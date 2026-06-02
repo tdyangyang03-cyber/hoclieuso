@@ -646,6 +646,80 @@ export default function App() {
           const apiIds = new Set(mergedLessons.map((l: any) => l.id));
           const customToMerge = customLessons.filter(l => !apiIds.has(l.id));
           mergedLessons = [...mergedLessons, ...customToMerge];
+
+          // Auto-sync any unsynced or modified offline lessons/materials to server so other users can see them!
+          const dbLessons = data.lessons || [];
+          const lessonsToKeep: any[] = [];
+          const lessonsToSync: any[] = [];
+
+          for (const localLesson of customLessons) {
+            const dbMatch = dbLessons.find((dbL: any) => dbL.id === localLesson.id);
+            if (!dbMatch) {
+              // Not in database at all -> must sync
+              lessonsToSync.push(localLesson);
+              lessonsToKeep.push(localLesson);
+            } else {
+              // Exists in database, check if mismatch (edited title/description or different materials)
+              const localMaterials = localLesson.materials || [];
+              const dbMaterials = dbMatch.materials || [];
+              
+              const isTitleDiff = localLesson.title !== dbMatch.title;
+              const isDescDiff = (localLesson.description || "") !== (dbMatch.description || "");
+              const isTypeDiff = (localLesson.type || "") !== (dbMatch.type || "");
+              const isMaterialsCountDiff = localMaterials.length !== dbMaterials.length;
+              
+              let isMaterialsContentDiff = false;
+              if (!isMaterialsCountDiff) {
+                // Check if any material id/title/url is different
+                for (let i = 0; i < localMaterials.length; i++) {
+                  const lm = localMaterials[i];
+                  const dm = dbMaterials.find((x: any) => x.id === lm.id);
+                  if (!dm || dm.title !== lm.title || dm.url !== lm.url || dm.type !== lm.type) {
+                    isMaterialsContentDiff = true;
+                    break;
+                  }
+                }
+              }
+
+              if (isTitleDiff || isDescDiff || isTypeDiff || isMaterialsCountDiff || isMaterialsContentDiff) {
+                console.log(`[Sync Engine] Mismatch found for lesson ${localLesson.id} "${localLesson.title}". Will sync local changes to cloud.`);
+                lessonsToSync.push(localLesson);
+                lessonsToKeep.push(localLesson);
+              } else {
+                // Completely identical -> No need to keep in local storage or sync! (Safe to prune from local storage since the server has a perfect copy)
+              }
+            }
+          }
+
+          // Save cleaned-up array back to local storage
+          if (lessonsToKeep.length !== customLessons.length) {
+            localStorage.setItem("khoahoc4_custom_lessons", JSON.stringify(lessonsToKeep));
+          }
+
+          if (lessonsToSync.length > 0) {
+            console.log(`[Sync Engine] Found ${lessonsToSync.length} unsynced/modified local lessons. Synchronizing to cloud...`);
+            for (const lesson of lessonsToSync) {
+              fetch("/api/lessons", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: lesson.id,
+                  categoryIndex: lesson.categoryIndex,
+                  title: lesson.title,
+                  type: lesson.type,
+                  url: lesson.url,
+                  description: lesson.description || "",
+                  materials: lesson.materials || []
+                })
+              }).then(res => {
+                if (res.ok) {
+                  console.log(`[Sync Engine] Successfully synchronized lesson to cloud: ${lesson.title}`);
+                }
+              }).catch(err => {
+                console.error("[Sync Engine Error] Failed to upload lesson to cloud:", err);
+              });
+            }
+          }
         }
       } catch (e) {
         // ignore
