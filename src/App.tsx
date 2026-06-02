@@ -40,6 +40,8 @@ const SUBJECT_COLORS = [
   "bg-blue-100 border-blue-400 text-blue-800 hover:bg-blue-150"
 ];
 
+const GLOBAL_CLASS_ID = "lop_khoa_hoc_4_chung";
+
 function getLessonTypeIcon(type: string): string {
   if (!type) return "🌐";
   // If it starts with an emoji, extract and return it!
@@ -455,18 +457,7 @@ export default function App() {
   const [newFolderInput, setNewFolderInput] = useState("");
 
   const [deletedFoldersMap, setDeletedFoldersMap] = useState<Record<string, string[]>>({});
-  const [customFoldersMap, setCustomFoldersMap] = useState<Record<string, string[]>>(() => {
-    try {
-      const stored = localStorage.getItem("khoahoc4_custom_folders");
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem("khoahoc4_custom_folders", JSON.stringify(customFoldersMap));
-  }, [customFoldersMap]);
+  const [customFoldersMap, setCustomFoldersMap] = useState<Record<string, string[]>>({});
 
   const [editingFolder, setEditingFolder] = useState<string | null>(null);
   const [editingFolderValue, setEditingFolderValue] = useState("");
@@ -569,37 +560,12 @@ export default function App() {
   const updateOfflineState = (updaterFn: (prevState: AppState) => AppState) => {
     setAppState(prev => {
       const updated = updaterFn(prev);
-      localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
       return updated;
     });
   };
 
   const useOfflineFallback = () => {
-    setIsOfflineMode(true);
-    const local = localStorage.getItem("khoahoc4_state");
-    if (local) {
-      try {
-        const parsed = JSON.parse(local);
-        setAppState(parsed);
-        if (parsed.teacherNotes && parsed.teacherNotes[0]) {
-          setNoteInputValue(parsed.teacherNotes[0].content);
-        }
-        
-        // Sync open lesson detail dynamically
-        if (selectedExploreLesson) {
-          const fresh = parsed.lessons?.find((l: any) => l.id === selectedExploreLesson.id);
-          if (fresh) {
-            setSelectedExploreLesson(fresh);
-          }
-        }
-      } catch (err) {
-        setAppState(DEFAULT_COSMIC_STATE);
-        localStorage.setItem("khoahoc4_state", JSON.stringify(DEFAULT_COSMIC_STATE));
-      }
-    } else {
-      setAppState(DEFAULT_COSMIC_STATE);
-      localStorage.setItem("khoahoc4_state", JSON.stringify(DEFAULT_COSMIC_STATE));
-    }
+    console.log("[Classroom Engine] Connection retry check... relying on active in-memory state.");
   };
 
   // Real-time server sync polling
@@ -631,74 +597,25 @@ export default function App() {
 
   // Real-time synchronization via periodic polling (safe with any proxy or Vercel static router cache setups)
   useEffect(() => {
-    if (isOfflineMode) return;
-
+    // Keep polling active for everyone so everyone remains perfectly in sync with the live Cloud state
     fetchState();
     const interval = setInterval(fetchState, 3000);
 
     return () => {
       clearInterval(interval);
     };
-  }, [isOfflineMode]);
+  }, []);
 
   const handleStateUpdate = async (data: any) => {
     if (!data) return;
-    // Smart session synchronizer to survive Cloud Run server context restarts without state loss
-    let merged = data;
-    const local = localStorage.getItem("khoahoc4_state");
-    if (local) {
-      try {
-        const parsedLocal = JSON.parse(local);
-        if (parsedLocal) {
-          // Server is in pristine/default seed status if it has exactly its initial seed events
-          const isServerSeedState = 
-            data.lessons && 
-            data.lessons.length === 2 && 
-            data.lessons.some((l: any) => l.id === "L1") && 
-            data.lessons.some((l: any) => l.id === "L2") &&
-            data.parentFeedback &&
-            data.parentFeedback.length === 1 &&
-            data.parentFeedback[0]?.id === "f1" &&
-            (!data.workbookSubmissions || data.workbookSubmissions.length === 0);
-
-          // Client contains custom modifications/additions that should be preserved on restart
-          const clientHasCustomData = 
-            (parsedLocal.lessons && parsedLocal.lessons.length > 2) ||
-            (parsedLocal.lessons && parsedLocal.lessons.some((l: any) => l.id !== "L1" && l.id !== "L2")) ||
-            (parsedLocal.parentFeedback && parsedLocal.parentFeedback.length > 1) ||
-            (parsedLocal.workbookSubmissions && parsedLocal.workbookSubmissions.length > 0) ||
-            (parsedLocal.mindmapSubmissions && parsedLocal.mindmapSubmissions.length > 0) ||
-            (parsedLocal.students && parsedLocal.students.length > 2);
-
-          // ONLY allow 'teacher' to restore backup state to prevent students from overwriting DB with stale local backup
-          if (currentRoleRef.current === 'teacher' && isServerSeedState && clientHasCustomData) {
-            // Server restarted or state cleared: push client's backup state to restore online database
-            const resRestore = await fetch("/api/state/restore", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(parsedLocal)
-            });
-            const restoreData = await resRestore.json();
-            if (restoreData.success) {
-              merged = restoreData.state;
-            }
-          } else {
-            // Server is running lively as absolute source of truth. Take latest edits, creations, or deletions directly!
-            merged = data;
-          }
-        }
-      } catch (err) {
-        console.warn("Local storage state synchronizer warning:", err);
-        merged = data;
-      }
-    }
-
-    setAppState(merged);
-    localStorage.setItem("khoahoc4_state", JSON.stringify(merged));
+    
+    // Explicitly bypass local storage to enforce one absolute source of truth in the cloud database
+    setAppState(data);
     setIsOfflineMode(false);
+    
     // Pre-fill teacher notes text if empty initially
-    if (merged.teacherNotes && merged.teacherNotes[0]) {
-      setNoteInputValue(merged.teacherNotes[0].content);
+    if (data.teacherNotes && data.teacherNotes[0]) {
+      setNoteInputValue(data.teacherNotes[0].content);
     }
     
     // Active presentation and routing synchronizer for students/parents based on teacher adjustments
@@ -706,19 +623,19 @@ export default function App() {
     const isScreenSyncedVal = isScreenSyncedRef.current;
     
     if (isScreenSyncedVal && (currentRoleVal === 'student' || currentRoleVal === 'parent')) {
-      if (merged.activeLessonId) {
-        const freshLesson = merged.lessons?.find((l: any) => l.id === merged.activeLessonId);
+      if (data.activeLessonId) {
+        const freshLesson = data.lessons?.find((l: any) => l.id === data.activeLessonId);
         if (freshLesson) {
           const currentSelLessonId = activeLessonIdRef.current;
-          if (!currentSelLessonId || currentSelLessonId !== merged.activeLessonId) {
+          if (!currentSelLessonId || currentSelLessonId !== data.activeLessonId) {
             setSelectedExploreLesson(freshLesson);
           }
-          if (merged.activeFolder && activeFolderRef.current !== merged.activeFolder) {
-            setActiveFolder(merged.activeFolder);
+          if (data.activeFolder && activeFolderRef.current !== data.activeFolder) {
+            setActiveFolder(data.activeFolder);
           }
-          if (merged.activeMaterialId) {
-            const freshMat = freshLesson.materials?.find((m: any) => m.id === merged.activeMaterialId);
-            if (freshMat && (!activeMaterialIdRef.current || activeMaterialIdRef.current !== merged.activeMaterialId)) {
+          if (data.activeMaterialId) {
+            const freshMat = freshLesson.materials?.find((m: any) => m.id === data.activeMaterialId);
+            if (freshMat && (!activeMaterialIdRef.current || activeMaterialIdRef.current !== data.activeMaterialId)) {
               setActiveMaterial(freshMat);
             }
           }
@@ -730,15 +647,15 @@ export default function App() {
         }
       }
 
-      if (merged.activeSubTab) {
+      if (data.activeSubTab) {
         setStudentActiveTab("materials");
-        setStudentMaterialSubTab(merged.activeSubTab);
+        setStudentMaterialSubTab(data.activeSubTab);
       }
     } else {
       // Sync open lesson detail dynamically if working separately or manually
       const currentSelLessonId = activeLessonIdRef.current;
       if (currentSelLessonId) {
-        const fresh = merged.lessons?.find((l: any) => l.id === currentSelLessonId);
+        const fresh = data.lessons?.find((l: any) => l.id === currentSelLessonId);
         if (fresh) {
           setSelectedExploreLesson(fresh);
         }
@@ -748,8 +665,8 @@ export default function App() {
 
   const fetchState = async () => {
     try {
-      // Force non-cached, fresh, absolute live data by appending timestamp parameter and no-cache flags
-      const res = await fetch(`/api/state?_t=${Date.now()}`, {
+      // Force non-cached, fresh, absolute live data by appending class ID and timestamp parameters
+      const res = await fetch(`/api/state?id=${GLOBAL_CLASS_ID}&_t=${Date.now()}`, {
         cache: "no-store",
         headers: {
           "Cache-Control": "no-cache",
@@ -771,7 +688,6 @@ export default function App() {
         handleStateUpdate(data);
       }
     } catch (e) {
-      // Quietly fall back without firing console.error to avoid error trackers capturing transient dev server restarts
       useOfflineFallback();
     }
   };
@@ -892,7 +808,6 @@ export default function App() {
           const updatedRes = await fetch("/api/state");
           const updatedData = await updatedRes.json();
           setAppState(updatedData);
-          localStorage.setItem("khoahoc4_state", JSON.stringify(updatedData));
           
           const newStudent = updatedData.students.find((s: any) => s.name.trim().toLowerCase() === cleanName.toLowerCase());
           if (newStudent) {
@@ -1201,17 +1116,6 @@ export default function App() {
   const handleDeleteStudent = async (id: string) => {
     requestConfirmation("Bé học sinh này sẽ bị xóa khỏi sổ lớp. Bạn có chắc chắn?", async () => {
       playClickSound();
-
-      // Track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_students") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_students", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
 
       // Offline updates / Instant update
       updateOfflineState(prev => ({
@@ -1944,23 +1848,10 @@ export default function App() {
     requestConfirmation("Có chắc chắn muốn xóa học liệu này không?", async () => {
       playClickSound();
 
-      // Instantly track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_lessons") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_lessons", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-
       // Update state instantly so the UI reacts with zero latency
       setAppState(prev => {
         const filtered = (prev.lessons || []).filter(l => l.id !== id);
-        const updated = { ...prev, lessons: filtered };
-        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-        return updated;
+        return { ...prev, lessons: filtered };
       });
 
       try {
@@ -2089,11 +1980,7 @@ export default function App() {
       if (data.success) {
         playSparkleSound();
         if (data.teacherProfile) {
-          setAppState(prev => {
-            const updated = { ...prev, teacherProfile: data.teacherProfile };
-            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-            return updated;
-          });
+          setAppState(prev => ({ ...prev, teacherProfile: data.teacherProfile }));
         }
         fetchState();
       }
@@ -2177,23 +2064,10 @@ export default function App() {
     requestConfirmation("Bạn có chắc muốn xóa kế hoạch/giáo án này?", async () => {
       playClickSound();
 
-      // Track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_plans") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_plans", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-
       // Update state instantly
       setAppState(prev => {
         const filtered = (prev.lessonPlans || []).filter(p => p.id !== id);
-        const updated = { ...prev, lessonPlans: filtered };
-        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-        return updated;
+        return { ...prev, lessonPlans: filtered };
       });
 
       try {
@@ -2212,23 +2086,10 @@ export default function App() {
     requestConfirmation("Bạn có chắc muốn xóa sự kiện lịch trình này?", async () => {
       playClickSound();
 
-      // Track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_events") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_events", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-
       // Update state instantly
       setAppState(prev => {
         const filtered = (prev.scheduleEvents || []).filter(e => e.id !== id);
-        const updated = { ...prev, scheduleEvents: filtered };
-        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-        return updated;
+        return { ...prev, scheduleEvents: filtered };
       });
 
       try {
@@ -2247,23 +2108,10 @@ export default function App() {
     requestConfirmation("Bạn có chắc muốn xóa phiếu học tập mẫu này?", async () => {
       playClickSound();
 
-      // Track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_sheets") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_sheets", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-
       // Update state instantly
       setAppState(prev => {
         const filtered = (prev.studySheets || []).filter(s => s.id !== id);
-        const updated = { ...prev, studySheets: filtered };
-        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-        return updated;
+        return { ...prev, studySheets: filtered };
       });
 
       try {
@@ -2282,23 +2130,10 @@ export default function App() {
     requestConfirmation("Bạn có chắc muốn xóa chủ đề thảo luận này và toàn bộ bình luận của học sinh?", async () => {
       playClickSound();
 
-      // Track as deleted locally
-      try {
-        const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_discussions") || "[]");
-        if (!deletedList.includes(id)) {
-          deletedList.push(id);
-          localStorage.setItem("khoahoc4_deleted_discussions", JSON.stringify(deletedList));
-        }
-      } catch (e) {
-        console.error(e);
-      }
-
       // Update state instantly
       setAppState(prev => {
         const filtered = (prev.discussionThreads || []).filter(t => t.id !== id);
-        const updated = { ...prev, discussionThreads: filtered };
-        localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-        return updated;
+        return { ...prev, discussionThreads: filtered };
       });
 
       try {
@@ -2442,9 +2277,7 @@ export default function App() {
     // Update locally immediately for an instant zero-latency feedback loop
     setAppState(prev => {
       const updatedList = [newFb, ...(prev.parentFeedback || [])];
-      const updated = { ...prev, parentFeedback: updatedList };
-      localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-      return updated;
+      return { ...prev, parentFeedback: updatedList };
     });
 
     const bodyContent = {
@@ -2475,9 +2308,7 @@ export default function App() {
               if (!map.has(item.id)) map.set(item.id, item);
             });
             const mergedList = Array.from(map.values());
-            const updated = { ...prev, parentFeedback: mergedList };
-            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-            return updated;
+            return { ...prev, parentFeedback: mergedList };
           });
         }
         fetchState();
@@ -2510,11 +2341,7 @@ export default function App() {
         });
         playSparkleSound();
         if (data.parentFeedback) {
-          setAppState(prev => {
-            const updated = { ...prev, parentFeedback: data.parentFeedback };
-            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-            return updated;
-          });
+          setAppState(prev => ({ ...prev, parentFeedback: data.parentFeedback }));
         }
         fetchState();
         alert("✉️ Đã gửi phản hồi đến phụ huynh thành công!");
@@ -2527,24 +2354,11 @@ export default function App() {
   // Delete parent feedback
   const handleDeleteFeedback = async (feedbackId: string) => {
     playClickSound();
-    
-    // Add to deleted feedbacks set locally so it never gets merged back by state synchronization
-    try {
-      const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
-      if (!deletedList.includes(feedbackId)) {
-        deletedList.push(feedbackId);
-        localStorage.setItem("khoahoc4_deleted_feedbacks", JSON.stringify(deletedList));
-      }
-    } catch (e) {
-      console.error(e);
-    }
 
     // Instantly filter parent feedback in present local state so the UI updates with zero delay
     setAppState(prev => {
       const filtered = (prev.parentFeedback || []).filter(fb => fb.id !== feedbackId);
-      const updated = { ...prev, parentFeedback: filtered };
-      localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-      return updated;
+      return { ...prev, parentFeedback: filtered };
     });
 
     try {
@@ -2557,13 +2371,7 @@ export default function App() {
       if (data.success) {
         playSparkleSound();
         if (data.parentFeedback) {
-          const deletedList = JSON.parse(localStorage.getItem("khoahoc4_deleted_feedbacks") || "[]");
-          const filtered = data.parentFeedback.filter((fb: any) => fb && !deletedList.includes(fb.id));
-          setAppState(prev => {
-            const updated = { ...prev, parentFeedback: filtered };
-            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-            return updated;
-          });
+          setAppState(prev => ({ ...prev, parentFeedback: data.parentFeedback }));
         }
         fetchState();
       }
@@ -2584,11 +2392,7 @@ export default function App() {
       const data = await res.json();
       if (data.success) {
         if (data.teacherProfile) {
-          setAppState(prev => {
-            const updated = { ...prev, teacherProfile: data.teacherProfile };
-            localStorage.setItem("khoahoc4_state", JSON.stringify(updated));
-            return updated;
-          });
+          setAppState(prev => ({ ...prev, teacherProfile: data.teacherProfile }));
         }
         fetchState();
       }
@@ -2602,15 +2406,6 @@ export default function App() {
     requestConfirmation("Hệ thống sẽ làm trống mọi học liệu, phiếu nộp, các điểm danh để bạn cài lại từ đầu. Chắc chắn chứ?", async () => {
       playClickSound();
       try {
-        localStorage.removeItem("khoahoc4_deleted_lessons");
-        localStorage.removeItem("khoahoc4_deleted_students");
-        localStorage.removeItem("khoahoc4_deleted_plans");
-        localStorage.removeItem("khoahoc4_deleted_events");
-        localStorage.removeItem("khoahoc4_deleted_sheets");
-        localStorage.removeItem("khoahoc4_deleted_discussions");
-        localStorage.removeItem("khoahoc4_deleted_feedbacks");
-        localStorage.removeItem("khoahoc4_state");
-
         const res = await fetch("/api/state/reset", { method: "POST" });
         const data = await res.json();
         if (data.success) {

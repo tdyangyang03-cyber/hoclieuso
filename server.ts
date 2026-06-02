@@ -206,7 +206,7 @@ async function fetchSupabaseState() {
     const { data, error } = await supabase
       .from("classroom_state")
       .select("state")
-      .eq("id", "lop4")
+      .eq("id", "lop_khoa_hoc_4_chung")
       .maybeSingle();
 
     if (error) {
@@ -245,7 +245,7 @@ async function saveSupabaseState(newState: any) {
   try {
     const { error } = await supabase
       .from("classroom_state")
-      .upsert({ id: "lop4", state: newState, updated_at: new Date().toISOString() });
+      .upsert({ id: "lop_khoa_hoc_4_chung", state: newState, updated_at: new Date().toISOString() });
 
     if (error) {
        if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
@@ -318,7 +318,7 @@ if (supabase) {
       state = { ...state, ...remoteState };
       console.log("[Supabase System] Synchronized and loaded in-memory state with Supabase cloud database.");
     } else {
-      console.log("[Supabase System] First-time cloud sync seeding 'lop4' starting state to Supabase Singapore.");
+      console.log("[Supabase System] First-time cloud sync seeding 'lop_khoa_hoc_4_chung' starting state to Supabase Singapore.");
       saveSupabaseState(state);
     }
   }).catch(e => {
