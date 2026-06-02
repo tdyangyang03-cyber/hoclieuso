@@ -595,11 +595,14 @@ export default function App() {
     isScreenSyncedRef.current = isScreenSynced;
   }, [isScreenSynced]);
 
-  // Real-time synchronization via periodic polling (safe with any proxy or Vercel static router cache setups)
+  // Kênh đồng bộ tĩnh duy nhất cho cả hệ thống lớp học khoa học 4 chung
+  const ROOM_CHANNEL = "khoahoc4_chung_tuyetdoi";
+
+  // Real-time synchronization via periodic polling (safe with any proxy or custom network configurations)
   useEffect(() => {
     // Keep polling active for everyone so everyone remains perfectly in sync with the live Cloud state
     fetchState();
-    const interval = setInterval(fetchState, 3000);
+    const interval = setInterval(fetchState, 2000); // Đồng bộ cực nhanh mỗi 2 giây
 
     return () => {
       clearInterval(interval);

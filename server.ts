@@ -183,22 +183,9 @@ let state = {
 // --- REAL-TIME PERSISTENCE ENGINE FOR VERCEL, CONTAINERS & ROBUST STATE ---
 const STATE_FILE_PATH = process.env.VERCEL ? "/tmp/khoahoc4_state.json" : path.join(process.cwd(), "state.json");
 
-// --- SUPABASE CLIENT INITIALIZATION ---
-// Automatically detect Supabase environment variables configured by Supabase / Vercel integrations
-const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// --- SUPABASE CLIENT INITIALIZATION DISABLED AS REQUESTED ---
 let supabase: any = null;
-
-if (supabaseUrl && supabaseKey) {
-  try {
-    supabase = createClient(supabaseUrl, supabaseKey);
-    console.log("[Supabase System] Connected to Supabase Workspace with URL:", supabaseUrl);
-  } catch (err) {
-    console.error("[Supabase System] Connection initialization failed:", err);
-  }
-} else {
-  console.log("[Supabase System] WARNING: Supabase environment variables are missing. Relying on local runtime and file system persistence.");
-}
+console.log("[Supabase System] Supabase is completely disabled. Relying on ultra-fast local memory database and filesystem persistence.");
 
 async function fetchSupabaseState() {
   if (!supabase) return null;
