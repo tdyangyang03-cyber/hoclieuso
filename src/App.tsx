@@ -234,7 +234,7 @@ const DEFAULT_COSMIC_STATE: AppState = {
   lessons: [
     {
       id: "L_sample1",
-      categoryIndex: 0, // CHỦ ĐỀ 1: CHẤT
+      categoryIndex: 1, // CHỦ ĐỀ 1: CHẤT
       title: "Sự chuyển thể của nước kì diệu 💧",
       type: "video",
       url: "https://www.youtube.com/watch?v=3gscG70jK10",
@@ -254,7 +254,7 @@ const DEFAULT_COSMIC_STATE: AppState = {
     },
     {
       id: "L_sample2",
-      categoryIndex: 1, // CHỦ ĐỀ 2: NĂNG LƯỢNG
+      categoryIndex: 2, // CHỦ ĐỀ 2: NĂNG LƯỢNG
       title: "Ánh sáng và vai trò của ánh sáng trong đời sống ⚡",
       type: "pdf",
       url: "https://images.unsplash.com/photo-1507608869274-d3177c8bb4c7?w=1200&auto=format&fit=crop&q=80",

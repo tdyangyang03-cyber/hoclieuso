@@ -424,10 +424,25 @@ function getGeminiClient(req?: any): { ai: GoogleGenAI; apiKey: string } | null 
 }
 
 // REST APIs
-app.get("/api/state", (req, res) => {
+app.get("/api/state", async (req, res) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
+
+  if (supabase) {
+    try {
+      const remoteState = await fetchSupabaseState();
+      if (remoteState) {
+        state = {
+          ...state,
+          ...remoteState
+        };
+      }
+    } catch (e) {
+      console.error("[Supabase Pull Error] Failed to refresh live state for client query:", e);
+    }
+  }
+
   res.json(state);
 });
 
@@ -494,8 +509,9 @@ app.post("/api/teacher/profile", (req, res) => {
 });
 
 // Create/Edit/Delete Lessons
-app.post("/api/lessons", (req, res) => {
+app.post("/api/lessons", async (req, res) => {
   const { id, categoryIndex, title, type, url, description, materials } = req.body;
+  let targetLesson: any = null;
   
   if (id) {
     // Edit existing
@@ -509,6 +525,7 @@ app.post("/api/lessons", (req, res) => {
         description,
         materials: materials || state.lessons[index].materials || []
       };
+      targetLesson = state.lessons[index];
     }
   } else {
     // Brand new item
@@ -524,7 +541,49 @@ app.post("/api/lessons", (req, res) => {
       materials: materials || []
     };
     state.lessons.push(newLesson);
+    targetLesson = newLesson;
   }
+
+  // Sync to database if Supabase is connected (Non-blocking, fire-and-forget inside Try-catch to protect mainline flow)
+  if (supabase && targetLesson) {
+    (async () => {
+      try {
+        const dbPayload = {
+          id: targetLesson.id,
+          title: targetLesson.title,
+          topic: String(targetLesson.categoryIndex),
+          class_id: "lop_khoa_hoc_4_chung"
+        };
+
+        console.log(`[Supabase Sync] Attempting to upsert lesson into 'lessons' table:`, dbPayload);
+        
+        const { error } = await supabase
+          .from("lessons")
+          .upsert(dbPayload);
+
+        if (error) {
+          console.error("=================== SUPABASE DB WRITE ERROR ===================");
+          console.error("[Supabase Error] Unable to upsert record into table 'lessons'.");
+          console.error("Code:", error.code);
+          console.error("Message:", error.message);
+          console.error("Details:", error.details);
+          console.error("Hint:", error.hint);
+          if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+            console.error("-> ROOT CAUSE DIAGNOSIS: Bảng 'lessons' chưa được tạo trên Supabase. Vui lòng vào Supabase Dashboard -> SQL Editor và chạy SQL Script được cung cấp ở chatbot để tự tạo bảng này!");
+          }
+          console.error("===============================================================");
+        } else {
+          console.log(`[Supabase Sync] Successfully synchronized lesson '${targetLesson.id}' with 'lessons' table.`);
+        }
+      } catch (err: any) {
+        console.error("=================== SUPABASE UNEXPECTED EXCEPTION ===================");
+        console.error("[Supabase Exception] Failed while communicating with Supabase database system:");
+        console.error(err);
+        console.error("====================================================================");
+      }
+    })();
+  }
+
   res.json({ success: true, lessons: state.lessons });
 });
 
@@ -642,7 +701,35 @@ app.post("/api/students/:id/remove-badge", (req, res) => {
 });
 
 app.delete("/api/lessons/:id", (req, res) => {
-  state.lessons = state.lessons.filter(l => l.id !== req.params.id);
+  const lessonId = req.params.id;
+  state.lessons = state.lessons.filter(l => l.id !== lessonId);
+
+  // Sync delete to database if Supabase is connected (Non-blocking, fire-and-forget to protect mainline response)
+  if (supabase) {
+    (async () => {
+      try {
+        const { error } = await supabase
+          .from("lessons")
+          .delete()
+          .eq("id", lessonId);
+
+        if (error) {
+          console.error("=================== SUPABASE DB DELETE ERROR ===================");
+          console.error(`[Supabase Error] Unable to delete lesson '${lessonId}' from table 'lessons'.`);
+          console.error("Message:", error.message);
+          if (error.message?.includes("relation") && error.message?.includes("does not exist")) {
+            console.error("-> ROOT CAUSE DIAGNOSIS: Bảng 'lessons' chưa được tạo trên Supabase. Vui lòng vào Supabase Dashboard -> SQL Editor và chạy SQL Script được cung cấp ở chatbot để tự tạo bảng này!");
+          }
+          console.error("=================================================================");
+        } else {
+          console.log(`[Supabase Sync] Successfully deleted lesson '${lessonId}' from 'lessons' table.`);
+        }
+      } catch (err: any) {
+        console.error("[Supabase Exception] Failed to execute deletion on lessons table:", err);
+      }
+    })();
+  }
+
   res.json({ success: true, lessons: state.lessons });
 });
 
